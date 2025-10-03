@@ -1,0 +1,61 @@
+# ============================================================================
+# Switch to Fish (Interactive Only)
+# ============================================================================
+# Only switch to fish in interactive shells, not in IDEs or scripts
+if [[ $- == *i* ]] && [ -z "$INTELLIJ_ENVIRONMENT_READER" ]; then
+  if command -v fish >/dev/null 2>&1; then
+    exec fish -l
+  fi
+fi
+
+# ============================================================================
+# Path Configuration
+# ============================================================================
+typeset -U path cdpath fpath manpath
+fpath=(~/.zsh/completions $fpath)
+
+# ============================================================================
+# Completion System
+# ============================================================================
+autoload -U compinit
+compinit -C  # Skip security check for faster startup
+
+# ============================================================================
+# Plugins
+# ============================================================================
+# zsh-autosuggestions configuration
+if [ -f /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]; then
+  source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+elif [ -f /usr/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]; then
+  source /usr/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+elif [ -f ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh ]; then
+  source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
+fi
+ZSH_AUTOSUGGEST_STRATEGY=(history)
+
+# ============================================================================
+# History Configuration
+# ============================================================================
+HISTSIZE="10000"
+SAVEHIST="10000"
+HISTFILE="$HOME/.zsh_history"
+mkdir -p "$(dirname "$HISTFILE")"
+
+# History options
+setopt HIST_FCNTL_LOCK          # Use fcntl for better file locking
+setopt APPEND_HISTORY           # Append rather than overwrite
+setopt HIST_IGNORE_DUPS         # Don't record duplicate consecutive commands
+setopt HIST_IGNORE_SPACE        # Don't record commands starting with space
+setopt SHARE_HISTORY            # Share history between sessions
+setopt HIST_REDUCE_BLANKS       # Remove superfluous blanks
+
+# ============================================================================
+# Shell Options
+# ============================================================================
+setopt autocd                   # cd by typing directory name
+
+# ============================================================================
+# Tool Integration
+# ============================================================================
+eval "$(direnv hook zsh)"
+
