@@ -8,7 +8,7 @@ set -g __fish_config_sourced 1
 if status is-interactive
     # Greeting
     set -g fish_greeting "Welcome to fish, the friendly interactive shell!"
-    set -g fish_greeting (printf '%s%s@%s%s %s%s%s\n%sUptime:%s %s' \
+    set -g fish_greeting (printf 'Welcome %s%s@%s%s! Today is %s%s%s and the system has been up for %s%s %s' \
     	(set_color brblue) (whoami) (hostname -s) (set_color normal) \
     	(set_color brgreen) (date '+%A, %B %d %Y - %H:%M') (set_color normal) \
     	(set_color bryellow) (set_color normal) (uptime | sed 's/.*up //' | sed 's/,.*//')
