@@ -1,0 +1,66 @@
+[alias]
+	poh = "push origin HEAD"
+	puh = "pull origin HEAD"
+	set-upstream = "!git branch --set-upstream-to=origin/`git symbolic-ref --short HEAD`"
+	undo-commit = "reset --soft HEAD^"
+	unstage = "reset HEAD"
+
+[branch]
+	autosetuprebase = "always"
+
+[color]
+	ui = true
+
+[core]
+	autocrlf = "input"
+	editor = "vim"
+	excludesfile = "/Users/cramer/.gitignore_global"
+
+[diff]
+	tool = "bcomp"
+
+[difftool]
+	prompt = false
+
+[difftool "bcomp"]
+	cmd = "/usr/local/bin/bcomp $LOCAL $REMOTE"
+	trustExitCode = true
+
+[filter "lfs"]
+	clean = "git-lfs clean -- %f"
+	process = "git-lfs filter-process"
+	required = true
+	smudge = "git-lfs smudge -- %f"
+
+[gpg]
+	format = "openpgp"
+
+[gpg "openpgp"]
+	program = "/nix/store/lw8ddlyr1yjk2hvpzzaw9m2vciirhd70-gnupg-2.4.8/bin/gpg"
+
+[init]
+	defaultBranch = "main"
+
+[merge]
+	tool = "bcomp"
+
+[mergetool]
+	prompt = false
+
+[mergetool "bcomp"]
+	cmd = "/usr/local/bin/bcomp $LOCAL $REMOTE $BASE $MERGED"
+	trustExitCode = true
+
+[pull]
+	rebase = true
+
+[push]
+	autoSetupRemote = true
+	default = "current"
+
+[url "ssh://git@github.com/"]
+	insteadOf = "https://github.com/"
+
+[user]
+	email = "mjcramer@gmail.com"
+	name = "Michael Cramer"
