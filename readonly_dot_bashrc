@@ -1,5 +1,3 @@
-
-
 # Commands that should be applied only for interactive shells.
 [[ $- == *i* ]] || return
 
@@ -29,10 +27,6 @@ alias pingfast='ping -c 100 -s.2'
 alias vi=nvim
 alias vim=nvim
 
-if [[ ! -v BASH_COMPLETION_VERSINFO ]]; then
-  . "/nix/store/nhsbmy8fnhswa81qgk9ws7sps6zkrdxm-bash-completion-2.16.0/etc/profile.d/bash_completion.sh"
-fi
-
       ## Check to see that we have fish...
       if [ -z "$INTELLIJ_ENVIRONMENT_READER" ]; then
         if command -v /nix/store/26r8b5iag244gb50ln0vjhw1dhz1q6n3-fish-4.0.2/bin/fish >/dev/null 2>&1; then
@@ -54,17 +48,6 @@ fi
 #      PS1="$${bold}$${green}\u$${reset}@$${magenta}\h$${reset}:$${blue}\w$${reset}$${yellow}\$(__git_ps1 ' (%s)')$${reset}\n\$ "
       PS1='\[\e[0;32m\]\u@\h \[\e[0;34m\]\w \[\e[0;36m\]\A\[\e[0m\]\n\[\e[0;37m\]❯ \[\e[0m\]'
 
-__HM_PROMPT_COMMAND="${PROMPT_COMMAND:+${PROMPT_COMMAND%;};}__hm_vte_prompt_command"
-. /nix/store/12j3s35i5bxbssn13zmzhwqf5qp99sjq-vte-0.80.1/etc/profile.d/vte.sh
-if [[ $(type -t __vte_prompt_command) = function ]]; then
-  __hm_vte_prompt_command() {
-    local old_exit_status=$?
-    __vte_prompt_command
-    return $old_exit_status
-  }
-  PROMPT_COMMAND="$__HM_PROMPT_COMMAND"
-fi
-unset __HM_PROMPT_COMMAND
 
-eval "$(/nix/store/p1hdzfxppxjp22r71fgfwghziz4axmnq-direnv-2.36.0/bin/direnv hook bash)"
+eval "$(direnv hook bash)"
 
