@@ -16,32 +16,31 @@ if status is-interactive
     	(set_color bryellow) (set_color normal) (uptime | sed 's/.*up //' | sed 's/,.*//')
     )
 
+    # Ensure fisher is installed for plugins (tide, done)
+    if not type -q fisher
+        set -q XDG_CONFIG_HOME; or set XDG_CONFIG_HOME ~/.config
+        curl -sL https://git.io/fisher | source
+        fisher install jorgebucaran/fisher
+    end
 
-# # Ensure fisher is installed for plugins (tide, done)
-# if not type -q fisher
-#     set -q XDG_CONFIG_HOME; or set XDG_CONFIG_HOME ~/.config
-#     curl -sL https://git.io/fisher | source
-#     fisher install jorgebucaran/fisher
-# end
+    # Install tide and done if missing
+    if not functions -q tide
+        fisher install IlanCosman/tide@v6
+    end
+    if not functions -q __done_initialized
+        fisher install franciscolourenco/done
+    end
 
-# # Install tide and done if missing
-# if not functions -q tide
-#     fisher install IlanCosman/tide@v6
-# end
-# if not functions -q __done_initialized
-#     fisher install franciscolourenco/done
-# end
-
-
-    # ========================================================================
     # Prompt Configuration (Tide)
-    # ========================================================================
     set -g tide_left_prompt_items time pwd git
     set -g tide_right_prompt_items status cmd_duration jobs python kubectl toolbox terraform aws
+    tide configure --auto --style=Rainbow --show_time='24-hour format' --rainbow_prompt_separators=Round \
+                   --powerline_prompt_heads=Round --powerline_prompt_tails=Sharp \
+                   --powerline_prompt_style='Two lines, frame' --powerline_right_prompt_frame=Yes \
+                   --prompt_connection=Disconnected --prompt_connection_andor_frame_color=Darkest \
+                   --prompt_colors='True color' --prompt_spacing=Compact --icons='Many icons' --transient=Yes
 
-    # ========================================================================
     # Aliases
-    # ========================================================================
     alias less='less -r'
     alias mkdir='mkdir -pv'
     alias grep='grep --color=auto'
@@ -56,10 +55,14 @@ if status is-interactive
     alias vi=nvim
     alias vim=nvim
 
-    # ========================================================================
     # Key Bindings
-    # ========================================================================
     bind \e\x7f backward-kill-word
+
+
+    # PATH additions 
+    if test -d /Applications/IntelliJ\ IDEA.app/Contents/MacOS
+        set -gx PATH /Applications/IntelliJ\ IDEA.app/Contents/MacOS $PATH
+    end
 
     # ========================================================================
     # Enviroment Variables    
@@ -87,12 +90,8 @@ if status is-interactive
         set -g direnv_fish_mode disable_arrow
         direnv hook fish | source
     end
-
-    # jenv (Java version management)
-    if command -q jenv
-        jenv init - | source
-    end
 end
+
 
 # ============================================================================
 # Login Shell Configuration
@@ -101,45 +100,3 @@ if status is-login
     # Login shell initialization
     # Add any login-specific configuration here
 end
-
-
-
-
-
-
-
-
-# # Optional: print tide configuration hint (from your Nix config)
-# function tide_hint --on-event fish_prompt
-#     functions -q tide && functions -e tide_hint
-#     echo "\nTo configure tide, run: tide configure --style=Rainbow --prompt_colors='True color'"
-# end
-
-# # jenv init (if present)
-# if type -q jenv
-#     jenv init - | source
-# end
-
-# # PATH additions (mac)
-# if test -d /Applications/IntelliJ\ IDEA.app/Contents/MacOS
-#     set -gx PATH /Applications/IntelliJ\ IDEA.app/Contents/MacOS $PATH
-# end
-# if test -d /opt/homebrew/bin
-#     set -gx PATH /opt/homebrew/bin $PATH
-# end
-
-# # Aliases
-# alias now='date +"%T"'
-# alias vi='nvim'
-# alias vim='nvim'
-
-# # Key bindings
-# bind \e\x7f backward-kill-word
-
-# # Docker completion
-# if type -q docker
-#     if not test -f ~/.config/fish/completions/docker.fish
-#         docker completion fish > ~/.config/fish/completions/docker.fish
-#     end
-# end
-
