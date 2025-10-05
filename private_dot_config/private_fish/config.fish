@@ -60,8 +60,9 @@ if status is-interactive
 
 
     # PATH additions 
+    fish_add_path ~/.local/bin
     if test -d /Applications/IntelliJ\ IDEA.app/Contents/MacOS
-        set -gx PATH /Applications/IntelliJ\ IDEA.app/Contents/MacOS $PATH
+        fish_add_path /Applications/IntelliJ\ IDEA.app/Contents/MacOS
     end
 
     # ========================================================================
