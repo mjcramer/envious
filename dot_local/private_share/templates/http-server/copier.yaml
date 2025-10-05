@@ -1,0 +1,5 @@
+_min_copier_version: "9.0.0"
+
+packages:
+  type: str
+  help: "Enter a list of packages that will be installed (separated by spaces)"
