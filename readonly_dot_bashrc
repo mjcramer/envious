@@ -1,6 +1,13 @@
 # Commands that should be applied only for interactive shells.
 [[ $- == *i* ]] || return
 
+if [ -z "$INTELLIJ_ENVIRONMENT_READER" ]; then
+  # Check to see that we have fish...
+  if command -v fish >/dev/null 2>&1; then
+    exec fish -l
+  fi
+fi
+
 HISTCONTROL=erasedups:ignoreboth
 HISTFILESIZE=100000
 HISTIGNORE='&:[ ]*:exit:ls:bg:fg:history:clear'
@@ -11,6 +18,14 @@ shopt -s cmdhist
 shopt -s autocd
 shopt -s dirspell
 shopt -s cdspell
+
+# Enable incremental history search with up/down arrows (also Readline goodness)
+bind '"\e[A": history-search-backward'
+bind '"\e[B": history-search-forward'
+bind '"\e[C": forward-char'
+bind '"\e[D": backward-char'
+# Display matches for ambiguous patterns at first tab press
+bind "set show-all-if-ambiguous on"
 
 alias egrep='egrep --color = auto'
 alias fgrep='fgrep --color = auto'
@@ -27,27 +42,17 @@ alias pingfast='ping -c 100 -s.2'
 alias vi=nvim
 alias vim=nvim
 
-      ## Check to see that we have fish...
-      if [ -z "$INTELLIJ_ENVIRONMENT_READER" ]; then
-        if command -v /nix/store/26r8b5iag244gb50ln0vjhw1dhz1q6n3-fish-4.0.2/bin/fish >/dev/null 2>&1; then
-          exec /nix/store/26r8b5iag244gb50ln0vjhw1dhz1q6n3-fish-4.0.2/bin/fish -l
-        fi
-      fi
+# Colors
+reset="\[\e[0m\]"
+bold="\[\e[1m\]"
+red="\[\e[0;31m\]"
+green="\[\e[0;32m\]"
+yellow="\[\e[0;33m\]"
+blue="\[\e[0;34m\]"
+magenta="\[\e[0;35m\]"
+cyan="\[\e[0;36m\]"
 
-      # Colors
-      reset="\[\e[0m\]"
-      bold="\[\e[1m\]"
-      red="\[\e[0;31m\]"
-      green="\[\e[0;32m\]"
-      yellow="\[\e[0;33m\]"
-      blue="\[\e[0;34m\]"
-      magenta="\[\e[0;35m\]"
-      cyan="\[\e[0;36m\]"
-
-      # Set a colorful and fancy Bash prompt
-#      PS1="$${bold}$${green}\u$${reset}@$${magenta}\h$${reset}:$${blue}\w$${reset}$${yellow}\$(__git_ps1 ' (%s)')$${reset}\n\$ "
-      PS1='\[\e[0;32m\]\u@\h \[\e[0;34m\]\w \[\e[0;36m\]\A\[\e[0m\]\n\[\e[0;37m\]❯ \[\e[0m\]'
-
+# Set a colorful and fancy Bash prompt
+PS1='\[\e[0;32m\]\u@\h \[\e[0;34m\]\w \[\e[0;36m\]\A\[\e[0m\]\n\[\e[0;37m\]❯ \[\e[0m\]'
 
 eval "$(direnv hook bash)"
-
