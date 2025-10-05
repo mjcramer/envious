@@ -6,9 +6,11 @@ set -g __fish_config_sourced 1
 # Interactive Shell Configuration
 # ============================================================================
 if status is-interactive
+    # ========================================================================
     # Greeting
+    # ========================================================================
     set -g fish_greeting "Welcome to fish, the friendly interactive shell!"
-    set -g fish_greeting (printf 'Welcome %s%s@%s%s! It is %s%s%s, uptime: %s%s%s' \
+    set -g fish_greeting (printf 'Welcome %s%s@%s%s! It is %s%s%s, and I have been up for %s%s%s' \
     	(set_color brblue) (whoami) (hostname -s) (set_color normal) \
     	(set_color brgreen) (date '+%A, %B %d %Y at %H:%M') (set_color normal) \
     	(set_color bryellow) (set_color normal) (uptime | sed 's/.*up //' | sed 's/,.*//')
@@ -60,9 +62,18 @@ if status is-interactive
     bind \e\x7f backward-kill-word
 
     # ========================================================================
+    # Enviroment Variables    
+    # ========================================================================
+    set -gx EDITOR nvim
+
+    # ========================================================================
     # Tool Integration
     # ========================================================================
     
+    if command -q chezmoi
+      chezmoi completions fish | source
+    end
+
     # Docker completions
     if command -q docker
         if test ! -f ~/.config/fish/completions/docker.fish
