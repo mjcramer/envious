@@ -16,20 +16,6 @@ if status is-interactive
     	(set_color bryellow) (set_color normal) (uptime | sed 's/.*up //' | sed 's/,.*//')
     )
 
-    # # Ensure fisher is installed for plugins (tide, done)
-    # if not type -q fisher
-    #     set -q XDG_CONFIG_HOME; or set XDG_CONFIG_HOME ~/.config
-    #     curl -sL https://git.io/fisher | source
-    #     fisher install jorgebucaran/fisher
-    # end
-
-    # # Install tide and done if missing
-    # if not functions -q tide
-    #     fisher install IlanCosman/tide@v6
-    # end
-    # if not functions -q __done_initialized
-    #     fisher install franciscolourenco/done
-    # end
 
     # Prompt Configuration (Tide)
     #set -g tide_left_prompt_items time pwd git

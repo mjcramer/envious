@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 
 .PHONY: brew-install
 brew:
-	@brew update 
+	@brew update
 	@brew bundle install --file Brewfile && brew bundle cleanup --force --file Brewfile
 
 mac:
@@ -27,3 +27,4 @@ chez-apply:
 
 uninstall-nix:
 	@echo "Review before running: remove nix-daemon + /nix (macOS)."
+
