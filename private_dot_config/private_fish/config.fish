@@ -14,6 +14,23 @@ if status is-interactive
     	(set_color bryellow) (set_color normal) (uptime | sed 's/.*up //' | sed 's/,.*//')
     )
 
+
+# # Ensure fisher is installed for plugins (tide, done)
+# if not type -q fisher
+#     set -q XDG_CONFIG_HOME; or set XDG_CONFIG_HOME ~/.config
+#     curl -sL https://git.io/fisher | source
+#     fisher install jorgebucaran/fisher
+# end
+
+# # Install tide and done if missing
+# if not functions -q tide
+#     fisher install IlanCosman/tide@v6
+# end
+# if not functions -q __done_initialized
+#     fisher install franciscolourenco/done
+# end
+
+
     # ========================================================================
     # Prompt Configuration (Tide)
     # ========================================================================
@@ -73,4 +90,45 @@ if status is-login
     # Login shell initialization
     # Add any login-specific configuration here
 end
+
+
+
+
+
+
+
+
+# # Optional: print tide configuration hint (from your Nix config)
+# function tide_hint --on-event fish_prompt
+#     functions -q tide && functions -e tide_hint
+#     echo "\nTo configure tide, run: tide configure --style=Rainbow --prompt_colors='True color'"
+# end
+
+# # jenv init (if present)
+# if type -q jenv
+#     jenv init - | source
+# end
+
+# # PATH additions (mac)
+# if test -d /Applications/IntelliJ\ IDEA.app/Contents/MacOS
+#     set -gx PATH /Applications/IntelliJ\ IDEA.app/Contents/MacOS $PATH
+# end
+# if test -d /opt/homebrew/bin
+#     set -gx PATH /opt/homebrew/bin $PATH
+# end
+
+# # Aliases
+# alias now='date +"%T"'
+# alias vi='nvim'
+# alias vim='nvim'
+
+# # Key bindings
+# bind \e\x7f backward-kill-word
+
+# # Docker completion
+# if type -q docker
+#     if not test -f ~/.config/fish/completions/docker.fish
+#         docker completion fish > ~/.config/fish/completions/docker.fish
+#     end
+# end
 
