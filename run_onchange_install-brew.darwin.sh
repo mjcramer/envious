@@ -7,7 +7,7 @@ if ! command -v brew >/dev/null 2>&1; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-brewfile="$(git rev-parse --show-toplevel)/Brewfile"
+brewfile="Brewfile"
 brew update
 brew bundle install --file $brewfile && brew bundle cleanup --force --file $brewfile
 
