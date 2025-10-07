@@ -93,7 +93,6 @@ packages:
 
   apt:
     - apt-transport-https
-    - azure-cli
     - base-files
     - bash
     - bash-completion
