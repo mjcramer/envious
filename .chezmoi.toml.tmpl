@@ -2,3 +2,10 @@
   autoAdd = true
   autoCommit = false 
   autoPush = false
+
+[data]
+{{ if eq .chezmoi.hostname "NH-C3W3SG3-W" -}}
+  email = "mcramer@neuehealth.com"
+{{ else }}
+  email = "mjcramer@gmail.com"
+{{ end }}  
