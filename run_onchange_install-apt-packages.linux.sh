@@ -6,14 +6,14 @@ prefix="[install apt packages]"
 
 # Check if we're on Ubuntu or Debian
 if [ ! -f /etc/os-release ]; then
-    echo "Cannot determine OS - /etc/os-release not found"
+    echo "$prefix Cannot determine OS - /etc/os-release not found"
     exit 1
 fi
 
 . /etc/os-release
 
 if [ "$ID" != "ubuntu" ] && [ "$ID" != "debian" ]; then
-    echo "Not Ubuntu or Debian (detected: $ID) - skipping apt package installation"
+    echo "$prefix Not Ubuntu or Debian (detected: $ID) - skipping apt package installation"
     exit 0
 fi
 
@@ -75,4 +75,4 @@ sudo apt install -y \
     zip
 
 
-echo "$prefix Package installation complete!"
+echo "$prefix  ✅ Apt package installation complete!"
