@@ -50,8 +50,9 @@ fi
 
 echo "$prefix Detected $NAME - installing apt packages..."
 sudo apt update && sudo apt install -y \
-{{ range .packages.apt -}}
-    {{ . }} \
+{{- $len := len .packages.apt -}}
+{{- range $i, $pkg := .packages.apt -}}
+    {{ $pkg }}{{ if lt (add $i 1) $len }} \{{ end }}
 {{ end -}}
 
 echo "$prefix  ✅ Apt package installation complete!"
