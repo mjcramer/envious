@@ -16,9 +16,23 @@ fi
 
 echo "$prefix ✅ Updating packages,,,"
 
-brewfile="Brewfile"
 brew update
-brew bundle install --file $brewfile && brew bundle cleanup --force --file $brewfile
+
+brew bundle --file=/dev/stdin <<EOF
+{{ range .packages.homebrew.taps -}}
+tap {{ . | quote }}
+{{ end -}}
+{{ range .packages.homebrew.brews -}}
+brew {{ . | quote }}
+{{ end -}}
+{{ range .packages.darwin.casks -}}
+cask {{ . | quote }}
+{{ end -}}
+{{ range .packages.homebrew.vscodes -}}
+vscode {{ . | quote }}
+{{ end -}}
+EOF
+{{ end -}}
 
 echo "$prefix ✅ Brew has finished sucessfully!"
 
