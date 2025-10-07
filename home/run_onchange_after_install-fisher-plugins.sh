@@ -1,5 +1,7 @@
 #!/usr/bin/env fish
 
+set -euo pipefail
+
 prefix="[install fisher plugins]"
 
 # Install fisher if not already installed
