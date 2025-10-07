@@ -32,12 +32,6 @@
 	required = true
 	smudge = "git-lfs smudge -- %f"
 
-[gpg]
-	format = "openpgp"
-
-[gpg "openpgp"]
-	program = "/nix/store/lw8ddlyr1yjk2hvpzzaw9m2vciirhd70-gnupg-2.4.8/bin/gpg"
-
 [init]
 	defaultBranch = "main"
 
@@ -62,5 +56,5 @@
 	insteadOf = "https://github.com/"
 
 [user]
-	email = "mjcramer@gmail.com"
+	email = {{ .email | quote }}
 	name = "Michael Cramer"

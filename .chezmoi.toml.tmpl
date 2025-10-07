@@ -4,8 +4,8 @@
   autoPush = false
 
 [data]
-{{ if eq .chezmoi.hostname "NH-C3W3SG3-W" -}}
+{{- if eq .chezmoi.hostname "NH-C3W3SG3-W" }}
   email = "mcramer@neuehealth.com"
-{{ else }}
+{{- else }}
   email = "mjcramer@gmail.com"
-{{ end }}  
+{{- end }}  
