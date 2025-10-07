@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-echo {{ .chezmoi.arch }}
-echo {{ .chezmoi.os }}
-echo {{ .chezmoi.hostname }}
-echo {{ .chezmoi.config }}
+echo {{ .chezmoi.arch | quote }}
+echo {{ .chezmoi.os | quote }}
+echo {{ .chezmoi.hostname | quote }}
+echo {{ .chezmoi.config | quote }}
