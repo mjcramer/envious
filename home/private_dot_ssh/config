@@ -1,0 +1,3 @@
+Host github.com
+    StrictHostKeyChecking accept-new
+    UserKnownHostsFile ~/.ssh/known_hosts
