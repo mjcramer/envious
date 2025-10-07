@@ -2,6 +2,14 @@
 
 A personal dotfiles and scripts collection driven by Chezmoi. It provisions shell configuration, common tooling, and handy scripts/templates across macOS and Linux.
 
+
+```
+sh -c "$(curl -fsLS get.chezmoi.io/lb)" -- init --apply mjcramer/envious
+```
+
+
+
+
 ### What this repo provides
 - **Dotfiles**: `zsh`, `fish`, `git`, `htop`, `iterm2`, `nvim` and more under `private_dot_config/` and top-level dotfiles
 - **Scripts**: bootstrap and helper scripts in `dot_local/bin/` and `.chezmoiscripts/`
