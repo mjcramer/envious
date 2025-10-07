@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+ 
+prefix="[clean up]"
+
+echo {{ .chezmoi.arch | quote }}
+echo {{ .chezmoi.os | quote }}
+echo {{ .chezmoi.hostname | quote }}
+
+echo "$prefix Cleaning up..."
