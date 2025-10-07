@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
-
+echo farts
 {{ if eq .chezmoi.os "darwin" -}}
 # Brewfile hash: {{ include "Brewfile" | sha256sum }}
 prefix="[install brew packages]"
