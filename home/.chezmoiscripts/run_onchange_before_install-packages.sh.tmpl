@@ -3,7 +3,6 @@
 set -euo pipefail
 
 {{ if eq .chezmoi.os "darwin" -}}
-# Brewfile hash: {{ include "Brewfile" | sha256sum }}
 prefix="[install brew packages]"
 
 if ! command -v brew >/dev/null 2>&1; then
@@ -16,8 +15,7 @@ fi
 
 echo "$prefix ✅ Updating packages,,,"
 
-brew update
-
+brew update && \
 brew bundle --file=/dev/stdin <<EOF
 {{ range .packages.homebrew.taps -}}
 tap {{ . | quote }}
@@ -25,19 +23,17 @@ tap {{ . | quote }}
 {{ range .packages.homebrew.brews -}}
 brew {{ . | quote }}
 {{ end -}}
-{{ range .packages.darwin.casks -}}
+{{ range .packages.homebrew.casks -}}
 cask {{ . | quote }}
 {{ end -}}
 {{ range .packages.homebrew.vscodes -}}
 vscode {{ . | quote }}
 {{ end -}}
 EOF
-{{ end -}}
 
 echo "$prefix ✅ Brew has finished sucessfully!"
 
 {{ else if eq .chezmoi.os "linux" -}}
-
 prefix="[install apt packages]"
 
 # Check if we're on Ubuntu or Debian
@@ -45,7 +41,6 @@ if [ ! -f /etc/os-release ]; then
     echo "$prefix Cannot determine OS - /etc/os-release not found"
     exit 1
 fi
-
 . /etc/os-release
 
 if [ "$ID" != "ubuntu" ] && [ "$ID" != "debian" ]; then
@@ -54,7 +49,6 @@ if [ "$ID" != "ubuntu" ] && [ "$ID" != "debian" ]; then
 fi
 
 echo "$prefix Detected $NAME - installing apt packages..."
-
 sudo apt update && sudo apt install -y \
 {{ range .packages.apt -}}
     {{ . }} \
