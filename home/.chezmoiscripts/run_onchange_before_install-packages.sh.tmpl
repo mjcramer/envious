@@ -57,6 +57,9 @@ sudo apt update && sudo apt install -y \
 
 echo "$prefix  ✅ Apt package installation complete!"
 
+if command -v az &>/dev/null; then
+    curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+fi
 {{ else }}
 
 echo "Unable to determine package manager for {{ .chezmoi.os }}, skipping package installation..."
