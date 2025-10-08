@@ -126,6 +126,7 @@ packages:
     - maven
     - mysql-server
     - neovim
+    - nmap
     - openssh-client
     - openssh-server
     - pre-commit

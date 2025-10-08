@@ -1,0 +1,32 @@
+#!/bin/bash
+# Enable passwordless sudo access for a user
+
+# Set the username (modify this variable as needed)
+USERNAME={{ .username | quote }}
+
+# Validate username exists
+if ! id "$USERNAME" &>/dev/null; then
+    echo "Error: User '$USERNAME' does not exist"
+    exit 1
+fi
+
+# Define the sudoers file path
+SUDOERS_FILE="/etc/sudoers.d/$USERNAME"
+
+# Create sudoers entry content for passwordless sudo
+SUDO_ENTRY="$USERNAME ALL=(ALL:ALL) NOPASSWD: ALL"
+
+# Create the sudoers file with proper permissions
+echo "$SUDO_ENTRY" | sudo tee "$SUDOERS_FILE" > /dev/null
+sudo chmod 0440 "$SUDOERS_FILE"
+
+# Validate the sudoers file syntax
+if sudo visudo -c -f "$SUDOERS_FILE" &>/dev/null; then
+    echo "Successfully granted passwordless sudo access to user '$USERNAME'"
+    exit 0
+else
+    echo "Error: Invalid sudoers syntax. Removing file."
+    sudo rm -f "$SUDOERS_FILE"
+    exit 1
+fi
+
