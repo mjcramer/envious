@@ -39,6 +39,7 @@ packages:
       - mise
       - mysql
       - neovim
+      - nmap
       - openssh
       - pre-commit
       - prometheus
