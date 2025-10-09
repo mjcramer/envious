@@ -49,29 +49,6 @@ if status is-interactive
     # Enviroment Variables
     # ------------------------------------------------------------------------------------------------------------------
     set -gx EDITOR nvim
-
-    # ------------------------------------------------------------------------------------------------------------------
-    # Tool Integration
-    # ------------------------------------------------------------------------------------------------------------------
-    if command -q chezmoi
-      chezmoi completion fish | source
-    end
-
-    if command -q brew
-        brew shellenv | source
-    end
-
-    if command -q docker
-        if test ! -f ~/.config/fish/completions/docker.fish
-            mkdir -p ~/.config/fish/completions
-            docker completion fish >~/.config/fish/completions/docker.fish
-        end
-    end
-
-    if command -q direnv
-        set -g direnv_fish_mode disable_arrow
-        direnv hook fish | source
-    end
 end
 
 # ============================================================================
