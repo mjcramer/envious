@@ -13,6 +13,7 @@ packages:
       - coursier
       - copier
       - curl
+      - direnv
       - docker-completion
       - fish
       - fzf
