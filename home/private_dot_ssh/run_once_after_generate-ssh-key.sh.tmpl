@@ -2,9 +2,10 @@
 
 set -euo pipefail
 prefix="[generate ssh key]"
+echo
 
 if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
-    echo "$prefix Generating SSH key..."
+    echo "$prefix Generating ed25519 key..."
     ssh-keygen -t ed25519 -C {{ .email | quote }} -f "$HOME/.ssh/id_ed25519" -N ""
     echo "$prefix SSH key generated at ~/.ssh/id_ed25519"
     echo "$prefix Public key:"

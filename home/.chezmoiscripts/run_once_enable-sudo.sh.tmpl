@@ -1,8 +1,8 @@
 #!/bin/bash
-# Enable passwordless sudo access for a user
 
 # Set the username (modify this variable as needed)
 USERNAME={{ .username | quote }}
+echo "\n[enable sudo] Enabling passwordless sudo for user $USERNAME..."
 
 # Validate username exists
 if ! id "$USERNAME" &>/dev/null; then
@@ -29,4 +29,4 @@ else
     sudo rm -f "$SUDOERS_FILE"
     exit 1
 fi
-
+echo "\n[enable sudo] Sudo enable complete."

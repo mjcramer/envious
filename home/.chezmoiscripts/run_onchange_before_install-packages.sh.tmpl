@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+echo "\n[install packages] Starting package update/install..."
 
 {{ if eq .chezmoi.os "darwin" -}}
 prefix="[install brew packages]"
@@ -70,3 +71,5 @@ fi
 echo "Unable to determine package manager for {{ .chezmoi.os }}, skipping package installation..."
 
 {{ end -}}
+
+echo "[install packages] Package install completed."
