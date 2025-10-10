@@ -31,9 +31,9 @@ EOF
 )
 
 echo "$prefix Updating packages,,,"
-brew update && echo $brewfile | brew bundle --file=/dev/stdin
+brew update && echo "$brewfile" | brew bundle --file=/dev/stdin
 echo "$prefix Cleaning up old packages"
-echo $brewfile | brew bundle cleanup --file=/dev/stdin
+echo "$brewfile" | brew bundle cleanup --file=/dev/stdin
 
 echo "$prefix ✅ Brew has finished sucessfully!"
 
