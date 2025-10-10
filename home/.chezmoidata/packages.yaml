@@ -100,6 +100,7 @@ packages:
     - dash
     - debianutils
     - diffutils
+    - direnv
     - findutils
     - fish
     - fzf
@@ -130,6 +131,7 @@ packages:
     - protobuf-compiler
     - scala
     - shellcheck
+    - sshpass
     - tree
     - ubuntu-minimal
     - ubuntu-wsl

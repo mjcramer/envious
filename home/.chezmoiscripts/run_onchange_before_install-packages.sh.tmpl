@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
-echo "\n[install packages] Starting package update/install..."
+prefix="[install {{ .chezmoi.os }} packages]"
+echo
+echo "$prefix Starting package update/install..."
 
 {{ if eq .chezmoi.os "darwin" -}}
-prefix="[install brew packages]"
-
 if ! command -v brew >/dev/null 2>&1; then
   echo "$prefix Installing brew...."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -38,8 +38,6 @@ echo $brewfile | brew bundle cleanup --file=/dev/stdin
 echo "$prefix ✅ Brew has finished sucessfully!"
 
 {{ else if eq .chezmoi.os "linux" -}}
-prefix="[install apt packages]"
-
 # Check if we're on Ubuntu or Debian
 if [ ! -f /etc/os-release ]; then
     echo "$prefix Cannot determine OS - /etc/os-release not found"
@@ -52,21 +50,26 @@ if [ "$ID" != "ubuntu" ] && [ "$ID" != "debian" ]; then
     exit 0
 fi
 
-echo "$prefix Detected $NAME - installing apt packages..."
+echo "$prefix Detected $NAME - updating and installing apt packages..."
 sudo apt update && sudo apt install -y \
 {{- $len := len .packages.apt -}}
 {{- range $i, $pkg := .packages.apt -}}
     {{ $pkg }}{{ if lt (add $i 1) $len }} \{{ end }}
 {{ end -}}
 
-echo "$prefix  ✅ Apt package installation complete!"
+echo "$prefix ✅ Apt package installation complete!"
 
 if command -v mise &>/dev/null; then
-    echo "Installing mise..."
+    echo "$prefix mise already installed."
+else
+    echo "$prefix Installing mise..."
     curl -fsSL https://mise.run | bash
 fi
 
 if command -v az &>/dev/null; then
+    echo "$prefix Azure CLI already installed."
+else
+    echo "Installing Azure CLI..."
     curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 fi
 {{ else }}
@@ -75,4 +78,4 @@ echo "Unable to determine package manager for {{ .chezmoi.os }}, skipping packag
 
 {{ end -}}
 
-echo "[install packages] Package install completed."
+echo "$prefix Package install completed."
