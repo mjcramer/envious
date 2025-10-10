@@ -19,7 +19,6 @@ packages:
       - fzf
       - gh
       - git
-      - gradle
       - grafana
       - graphviz
       - grc
@@ -36,7 +35,6 @@ packages:
       - kubectx
       - lsd
       - make
-      - maven
       - mise
       - mysql
       - neovim
@@ -45,10 +43,7 @@ packages:
       - pre-commit
       - prometheus
       - protobuf
-      - sbt
-      - scala
       - shellcheck
-      - terraform
       - tree
       - unzip
       - watch

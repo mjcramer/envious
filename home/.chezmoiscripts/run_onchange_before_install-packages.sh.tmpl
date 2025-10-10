@@ -14,10 +14,7 @@ else
   echo "$prefix Brew is already installed."
 fi
 
-echo "$prefix ✅ Updating packages,,,"
-
-brew update && \
-brew bundle --file=/dev/stdin <<EOF
+brewfile=$(cat <<EOF
 {{ range .packages.homebrew.taps -}}
 tap {{ . | quote }}
 {{ end -}}
@@ -31,6 +28,12 @@ cask {{ . | quote }}
 vscode {{ . | quote }}
 {{ end -}}
 EOF
+)
+
+echo "$prefix Updating packages,,,"
+brew update && echo $brewfile | brew bundle --file=/dev/stdin
+echo "$prefix Cleaning up old packages"
+echo $brewfile | brew bundle cleanup --file=/dev/stdin
 
 echo "$prefix ✅ Brew has finished sucessfully!"
 
