@@ -107,7 +107,7 @@ packages:
     - gh
     - git
     - gnupg
-    - gradle
+    - gpg
     - graphviz
     - grc
     - grep
@@ -120,7 +120,6 @@ packages:
     - lsb-release
     - lsd
     - make
-    - maven
     - mysql-server
     - neovim
     - nmap
@@ -128,8 +127,6 @@ packages:
     - openssh-server
     - pre-commit
     - prometheus
-    - protobuf-compiler
-    - scala
     - shellcheck
     - sshpass
     - tree
