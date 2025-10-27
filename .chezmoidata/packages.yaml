@@ -136,4 +136,5 @@ packages:
     - util-linux
     - watch
     - wget
+    - wslu
     - zip
