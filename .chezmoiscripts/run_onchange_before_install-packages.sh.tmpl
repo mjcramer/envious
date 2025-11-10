@@ -85,4 +85,7 @@ echo "Unable to determine package manager for {{ .chezmoi.os }}, skipping packag
 
 {{ end -}}
 
+echo "Installing Claude Code..."
+curl -fsSL https://claude.ai/install.sh | bash
+
 echo "$prefix Package install completed."
