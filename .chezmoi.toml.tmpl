@@ -4,7 +4,7 @@
   autoPush = false
 
 [data]
-{{- if hasPrefix .chezmoi.hostname "NH-" }}
+{{- if hasPrefix "NH-" .chezmoi.hostname }}
   email = "mcramer@neuehealth.com"
   username = "mcramer"
 {{- else }}
