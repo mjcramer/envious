@@ -58,3 +58,13 @@ if status is-login
     # Login shell initialization
     # Add any login-specific configuration here
 end
+
+# ============================================================================
+# Additional Local Configuration
+# ============================================================================
+if test -d ~/.config/fish/local
+    for file in ~/.config/fish/local/*.fish
+        source $file
+    end
+end
+
