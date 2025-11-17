@@ -1,11 +1,16 @@
 # Commands that should be applied only for interactive shells.
 [[ $- == *i* ]] || return
 
-if [ -z "$INTELLIJ_ENVIRONMENT_READER" ]; then
+# Make sure we're not running in JetBrains terminall...
+if [ "$TERMINAL_EMULATOR" != "JetBrains-JediTerm" ]; then
   # Check to see that we have fish...
-  if command -v fish >/dev/null 2>&1; then
-    exec fish -l
-  fi
+    if command -v fish >/dev/null 2>&1; then
+        exec fish -l
+    else
+        echo "Fish shell not installed, falling back on bash..."
+    fi
+else
+    echo "Detected JetBrains Terminal..."
 fi
 
 HISTCONTROL=erasedups:ignoreboth
@@ -51,8 +56,9 @@ yellow="\[\e[0;33m\]"
 blue="\[\e[0;34m\]"
 magenta="\[\e[0;35m\]"
 cyan="\[\e[0;36m\]"
+white="\[\033[97m\]"
 
 # Set a colorful and fancy Bash prompt
-PS1='\[\e[0;32m\]\u@\h \[\e[0;34m\]\w \[\e[0;36m\]\A\[\e[0m\]\n\[\e[0;37m\]❯ \[\e[0m\]'
+PS1="$white󱑎 \t $reset\[\033[38;5;46m\][\w]$reset\n\[\033[38;5;226m\]󰅂$reset "
 
 eval "$(direnv hook bash)"
