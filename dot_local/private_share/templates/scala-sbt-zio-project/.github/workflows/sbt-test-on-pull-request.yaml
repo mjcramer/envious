@@ -1,0 +1,41 @@
+name: SBT Test on Pull Request
+run-name: SBT test for PR `${{ github.event.pull_request.title }}`, commit ${{ github.event.pull_request.commits }}
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sbt-test:
+    name: Build and Test
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+        scala:
+          - 3.3.1
+        java:
+          - 21
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout current branch (full)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: zulu
+          java-version: ${{ matrix.java }}
+          cache: sbt
+
+      - name: Build and test all projects
+        run: sbt ++${{ matrix.scala }} test

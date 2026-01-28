@@ -1,0 +1,43 @@
+# SBT specific
+target/
+project/target/
+project/project/
+.bsp/
+
+# Scala-IDE / Eclipse specific
+.cache
+.cache-main
+.cache-tests
+.classpath
+.project
+.settings
+.worksheet
+
+# IntelliJ IDEA
+.idea/
+.idea_modules/
+*.iml
+*.ipr
+*.iws
+out/
+
+# VS Code
+.vscode/
+.metals/
+.bloop/
+
+# Mac
+.DS_Store
+
+# Logs
+*.log
+
+# Misc
+*.class
+*.jar
+*.war
+*.ear
+
+# Metals / Bloop
+.bloop/
+metals.sbt

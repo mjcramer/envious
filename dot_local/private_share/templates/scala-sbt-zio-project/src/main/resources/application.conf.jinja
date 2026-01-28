@@ -1,0 +1,13 @@
+app {
+  name      = "{{ project_slug }}"
+  greeting  = "Hello world"
+  log-level = "INFO"
+}
+
+/*
+  You can use environment overrides like:
+
+  app {
+    greeting = ${?APP_GREETING}  # read APP_GREETING env var if set
+  }
+*/

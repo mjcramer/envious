@@ -1,0 +1,22 @@
+package {{ package_name }}
+
+import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.scalalogging.LazyLogging
+
+object Main extends LazyLogging:
+
+  def main(args: Array[String]): Unit =
+    val config = loadConfig()
+
+    val appName   = config.getString("app.name")
+    val greeting  = config.getString("app.greeting")
+    val logLevel  = config.getString("app.log-level")
+
+    logger.info(s"Starting app: $appName")
+    logger.debug(s"Configured log level: $logLevel")
+
+    logger.info(s"$greeting from $appName!")
+
+  private def loadConfig(): Config =
+    // Loads application.conf (+ overrides from reference.conf, env, etc.)
+    ConfigFactory.load()

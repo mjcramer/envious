@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<configuration debug="on" scan="true" scanPeriod="30 seconds">
+    <statusListener class="ch.qos.logback.core.status.OnConsoleStatusListener"/>
+    <jmxConfigurator/>
+    <property name="BASE" value="${logback.log_dir:-./}"/>
+    <property name="FILE" value="${application.name:-example}"/>
+    <property name="CONSOLE_LEVEL" value="${logback.level.console:-DEBUG}"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>${CONSOLE_LEVEL}</level>
+        </filter>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%highlight(%-5level) %boldWhite(%d{yyyy-MM-dd HH:mm:ss.SSS}) %-50.50logger{50} %message
+                %n%boldRed(%exception)
+            </pattern>
+        </encoder>
+    </appender>
+    <appender name="CONSOLE_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="CONSOLE"/>
+    </appender>
+
+    <appender name="LOGFILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${BASE}/${FILE}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${BASE}/${FILE}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>2GB</maxFileSize>
+            <maxHistory>10</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%-5level %d{yyyy-MM-dd HH:mm:ss.SSS} %logger{40} %message%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="${ROOT_LOG_LEVEL:-INFO}">
+        <appender-ref ref="CONSOLE_ASYNC"/>
+        <appender-ref ref="LOGFILE"/>
+    </root>
+
+    <shutdownHook/>
+</configuration>

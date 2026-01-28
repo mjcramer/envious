@@ -1,0 +1,74 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Project Details
+
+- **Organization**: {{ organization }}
+- **Scala Version**: {{ scala_version }}
+- **SBT Version**: {{ sbt_version }}
+- **Java Version**: {{ java_version }}
+
+## Prerequisites
+
+This project uses [mise](https://mise.jdx.dev/) for managing tool versions. Install mise and then run:
+
+```bash
+mise install
+```
+
+This will install the required versions of Java and SBT.
+
+## Building and Running
+
+### Compile the project
+```bash
+sbt compile
+```
+
+### Run the application
+```bash
+sbt run
+```
+
+### Run tests
+```bash
+sbt test
+```
+
+### Create a package
+```bash
+sbt package
+```
+
+## Project Structure
+
+```
+{{ project_slug }}/
+├── src/
+│   ├── main/
+│   │   ├── scala/           # Scala source files
+│   │   └── resources/       # Configuration files
+│   └── test/
+│       └── scala/           # Test files
+├── project/                 # SBT build configuration
+├── build.sbt               # Main build definition
+└── .mise.toml              # Tool version management
+```
+
+## Configuration
+
+The application uses Typesafe Config for configuration management. See `src/main/resources/application.conf` for available settings.
+
+You can override configuration values using environment variables. For example:
+```bash
+export APP_GREETING="Custom greeting"
+sbt run
+```
+
+## Dependencies
+
+- **Typesafe Config**: Configuration library
+- **Logback**: Logging implementation
+- **Scala Logging**: Scala logging wrapper
+- **ScalaTest**: Testing framework

@@ -1,0 +1,74 @@
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#
+#   This shared workflow builds a container and publishes it to the container registry.
+#   The container will be built with `sbt <project name>/Docker/publish`
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+name: Build and publish a docker container with NX
+
+on:
+  workflow_call: # Shared workflow triggered only from other workflows
+    inputs:
+      environment:
+        description: 'The github environment to which to deploy'
+        type: string
+        required: false
+        default: dev
+      project_name:
+        description: 'The name of the sbt project, used for the application and the image name'
+        type: string
+        required: true
+      image_tag:
+        description: 'The tag to apply to the built image'
+        type: string
+        required: false
+        default: ${{ github.sha }}
+      java_version:
+        description: 'The JDK version to use for building'
+        type: string
+        required: false
+        default: '21'
+      scala_version:
+        description: 'The scala version to use for building'
+        type: string
+        required: false
+        default: '3'
+    secrets:
+      CONTAINER_REGISTRY_PASSWORD:
+        required: true
+    outputs:
+      container_image:
+        description: 'The image tag for the image that was built'
+        value: ${{ jobs.build-publish-container.outputs.container_image }}
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+jobs:
+  build-publish-container:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+      - name: Log into container registry
+        uses: gcp/docker-login@v1
+        with:
+          login-server: ${{ vars.CONTAINER_REGISTRY }}
+          username: ${{ vars.CONTAINER_REGISTRY_USERNAME }}
+          password: ${{ secrets.CONTAINER_REGISTRY_PASSWORD }}
+      # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+      - name: Check out source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: zulu
+          java-version: ${{ inputs.java_version }}
+          cache: sbt
+      # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+      - name: Build project
+        run: sbt ++${{ inputs.scala_version }} ${{ inputs.project_name }}/Docker/publish
+      # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    outputs:
+      container_image: ${{ vars.CONTAINER_REGISTRY }}/seer-${{inputs.project_name}}:${{ inputs.image_tag }}

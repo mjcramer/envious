@@ -1,0 +1,74 @@
+# Copier template configuration for Scala SBT projects
+
+_templates_suffix: .jinja
+
+# Project metadata
+project_name:
+  type: str
+  help: What is your project name (kebab-case)?
+  default: my-scala-app
+
+project_slug:
+  type: str
+  help: Project slug (used for directory names)
+  default: "{{ project_name.lower().replace(' ', '-').replace('_', '-') }}"
+
+organization:
+  type: str
+  help: What is your organization (reverse domain notation)?
+  default: com.example
+  validator: "{% if not organization %}Organization is required{% endif %}"
+
+package_name:
+  type: str
+  help: Base package name (derived from organization)
+  default: "{{ organization }}"
+
+scala_version:
+  type: str
+  help: Scala version
+  default: "3.3.1"
+  choices:
+    - "3.3.1"
+    - "3.3.4"
+    - "3.4.0"
+    - "2.13.12"
+
+sbt_version:
+  type: str
+  help: SBT version
+  default: "1.10.0"
+
+java_version:
+  type: str
+  help: Java version (for mise)
+  default: "openjdk-25.0.0"
+  choices:
+    - "openjdk-25.0.0"
+    - "openjdk-23.0.0"
+    - "openjdk-21.0.0"
+    - "openjdk-17.0.0"
+
+project_version:
+  type: str
+  help: Initial project version
+  default: "0.1.0-SNAPSHOT"
+
+description:
+  type: str
+  help: Short project description
+  default: A Scala application
+
+_exclude:
+  - "copier.yml"
+  - "copier.yaml"
+  - ".git"
+  - ".idea"
+  - ".bsp"
+  - "target"
+  - "project/target"
+  - "*.iml"
+  - ".DS_Store"
+
+_jinja_extensions:
+  - jinja2_time.TimeExtension

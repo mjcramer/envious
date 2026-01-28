@@ -1,0 +1,22 @@
+ThisBuild / scalaVersion := "{{ scala_version }}"
+ThisBuild / organization := "{{ organization }}"
+ThisBuild / version      := "{{ project_version }}"
+
+lazy val root = (project in file("."))
+  .settings(
+    name := "{{ project_slug }}",
+
+    libraryDependencies ++= Seq(
+      // Typesafe Config
+      "com.typesafe" % "config" % "1.4.3",
+
+      // Logging: SLF4J + Logback
+      "ch.qos.logback" % "logback-classic" % "1.5.6",
+
+      // (Optional but nice) Scala logging wrapper
+      "com.typesafe.scala-logging" %% "scala-logging" % "3.9.5",
+
+      // Test
+      "org.scalatest" %% "scalatest" % "3.2.19" % Test
+    )
+  )

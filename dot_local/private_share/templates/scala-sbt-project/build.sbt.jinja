@@ -1,0 +1,66 @@
+ThisBuild / name := "{{ project_name }}"
+ThisBuild / scalaVersion := "{{ scala_version }}"
+ThisBuild / organization := "{{ organization }}"
+ThisBuild / organizationName := "mjcramer"
+ThisBuild / description := "I am the Seer"
+ThisBuild / scmInfo := Some(ScmInfo(url("https://github.com/mjcramer/seer"), "https://github.com/mjcramer/seer.git"))
+ThisBuild / developers := List(Developer("", "mjcramer", "mjcramer@gmail.com", url("https://github.com/mjcramer")))
+ThisBuild / licenses := List("Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0"))
+ThisBuild / homepage := Some(url("https://github.com/mjcramer/seer"))
+ThisBuild / versionScheme := Some("early-semver")
+
+
+val common = Seq(
+  scalacOptions ++= Seq(
+    "-deprecation",
+    "-encoding",
+    "utf-8",
+    "-explain",
+    "-explaintypes",
+    "-feature",
+    "-language:existentials",
+    "-language:higherKinds",
+    "-language:implicitConversions",
+    "-unchecked"
+  ),
+  libraryDependencies ++= Dependencies.base ++
+      Dependencies.testing.map(_ % Test) ++
+      Seq(
+        Modules.zioJson
+      ),
+  testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+  Test / fork := true,
+  git.useGitDescribe := true
+)
+
+lazy val seer = (project in file("."))
+  .enablePlugins(GitVersioning, GitBranchPrompt)
+  .settings(common *)
+  .settings(
+    name := "{{ project_slug }}",
+
+    libraryDependencies ++= Seq(
+      // Typesafe Config
+      "com.typesafe" % "config" % "1.4.3",
+
+      // Logging: SLF4J + Logback
+      "ch.qos.logback" % "logback-classic" % "1.5.6",
+
+      // (Optional but nice) Scala logging wrapper
+      "com.typesafe.scala-logging" %% "scala-logging" % "3.9.5",
+
+    mainClass := Some("io.github.mjcramer.seer.ingest.twitter.Main"),
+    crossScalaVersions := Nil,
+    libraryDependencies ++= Seq(
+      Modules.zioKafka,
+      Modules.scalaProtobufRuntime % "protobuf"
+    ) ++
+      Dependencies.config,
+    // The following will generate Scala classes for all discovered protobuf files into the src_managed dir
+    Compile / PB.targets := Seq(
+      scalapb.gen() -> (Compile / sourceManaged).value
+    )
+      // Test
+      "org.scalatest" %% "scalatest" % "3.2.19" % Test
+    )
+  )

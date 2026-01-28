@@ -1,0 +1,69 @@
+# SBT specific
+target/
+project/target/
+project/project/
+.bsp/
+
+# Scala-IDE / Eclipse specific
+.cache
+.cache-main
+.cache-tests
+.classpath
+.project
+.settings
+.worksheet
+
+# IntelliJ IDEA
+.idea/
+.idea_modules/
+*.iml
+*.ipr
+*.iws
+out/
+
+# VS Code
+.vscode/
+.metals/
+.bloop/
+
+# Mac
+.DS_Store
+
+# Logs
+*.log
+
+# Misc
+*.class
+*.jar
+*.war
+*.ear
+
+# Metals / Bloop
+.bloop/
+metals.sbt
+# Intellij Idea
+.idea
+.bloop
+
+# sbt
+.bsp
+**/target
+
+# python
+**/__pycache__
+tools/kafka-topic-reader/.python
+tools/kafka-topic-reader/proto
+
+# terraform
+**/.terraform
+**/.terraform.lock.hcl
+**/*.plan
+
+# local
+.direnv
+.envrc
+**/*.log
+
+# Miscellaneous
+.DS_Store
+

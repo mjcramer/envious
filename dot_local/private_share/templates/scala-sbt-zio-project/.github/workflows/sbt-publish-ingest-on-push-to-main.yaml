@@ -1,0 +1,21 @@
+name: SBT Publish on Release
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+    paths:
+      - identity-ingest/**
+      - .github/workflows/sbt-publish-*
+      - .github/workflows/build-publish-container.yaml
+
+jobs:
+  build-publish-container:
+    uses: ./.github/workflows/build-publish-container.yaml
+    with:
+      project_name: ingest
+      java_version: 21
+      scala_version: 3.3.1
+    secrets: inherit
