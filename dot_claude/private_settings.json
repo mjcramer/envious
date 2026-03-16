@@ -24,6 +24,8 @@
       "Bash(echo:*)",
       "Bash(mkdir:*)",
       "Bash(touch:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
       "Read(**)",
       "Edit(**)",
       "Write(**)"
@@ -33,15 +35,14 @@
       "Read(./.env.*)",
       "Read(**/.ssh/**)",
       "Write(./.env)",
-      "Write(./.env.*)"
+      "Write(./.env.*)",
+      "Write(./.claude/**)"
     ],
     "ask": [
       "Bash(rm:*)",
       "Bash(rmdir:*)",
       "Bash(mv:*)",
       "Bash(cp:*)",
-      "Bash(curl:*)",
-      "Bash(wget:*)",
       "Bash(ssh:*)",
       "Bash(sudo:*)"
     ]
