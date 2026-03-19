@@ -1,4 +1,8 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "input=$(cat); echo \"$(echo \"$input\" | jq -r '.cwd')\""
+  },
   "permissions": {
     "defaultMode": "default",
     "allow": [
@@ -26,6 +30,9 @@
       "Bash(touch:*)",
       "Bash(curl:*)",
       "Bash(wget:*)",
+      "Bash(xargs:*)",
+      "Bash(jar:*)",
+      "Bash(javap:*)",
       "Read(**)",
       "Edit(**)",
       "Write(**)"
