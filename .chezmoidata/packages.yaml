@@ -60,7 +60,6 @@ packages:
       - docker-desktop
       - firefox
       - iterm2
-      - libreoffice
       - sizeup
       - spotify
       - visual-studio-code
