@@ -10,7 +10,6 @@ packages:
       - bash-completion
       - brew-cask-completion
       - chezmoi
-      - codex
       - coursier
       - copier
       - curl
