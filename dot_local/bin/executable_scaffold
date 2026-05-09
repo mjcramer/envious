@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TEMPLATES_DIR="${TEMPLATES_DIR:-$HOME/.local/share/templates}"
+
+# ---------------------------------------------------------------------------
+# ANSI helpers
+# ---------------------------------------------------------------------------
+f_grn='\033[0;32m'; f_ylw='\033[0;33m'; f_red='\033[0;31m'
+f_cyn='\033[0;36m'; f_bold='\033[1m'; f_reset='\033[0m'
+info()  { printf "${f_grn}[INFO]${f_reset}  %s\n" "$*"; }
+warn()  { printf "${f_ylw}[WARN]${f_reset}  %s\n" "$*" >&2; }
+error() { printf "${f_red}[ERROR]${f_reset} %s\n" "$*" >&2; }
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+list_templates() {
+    find "$TEMPLATES_DIR" -maxdepth 1 -mindepth 1 -type d \
+        | sort \
+        | xargs -I{} basename {}
+}
+
+show_list() {
+    printf "\n${f_bold}Available templates${f_reset} (${f_cyn}${TEMPLATES_DIR}${f_reset}):\n\n"
+    while IFS= read -r t; do
+        printf "  ${f_cyn}%-26s${f_reset}" "$t"
+        # Show first non-empty, non-comment, non-metadata line from copier.yaml as hint
+        local hint
+        hint=$(grep -E '^[a-z]' "$TEMPLATES_DIR/$t/copier.yaml" 2>/dev/null \
+            | grep -v '^_' | cut -d: -f1 | tr '\n' ' ' | sed 's/ $//')
+        [[ -n "$hint" ]] && printf "(vars: %s)" "$hint"
+        printf "\n"
+    done < <(list_templates)
+    echo
+}
+
+pick_with_fzf() {
+    list_templates | fzf \
+        --prompt="Template > " \
+        --height=40% \
+        --border \
+        --preview="echo '--- copier.yaml ---'; cat '$TEMPLATES_DIR/{}'/copier.yaml 2>/dev/null" \
+        --preview-window=right:50%:wrap
+}
+
+usage() {
+    cat <<EOF
+
+${f_bold}scaffold${f_reset} — scaffold a new project from a copier template
+
+${f_bold}Usage:${f_reset}
+  scaffold                       Pick a template interactively (requires fzf)
+  scaffold list                  List all available templates
+  scaffold <template>            Scaffold into the current directory
+  scaffold <template> <dest>     Scaffold into <dest>
+
+${f_bold}Options:${f_reset}
+  -h, --help    Show this help
+
+${f_bold}Templates directory:${f_reset} ${f_cyn}${TEMPLATES_DIR}${f_reset}
+Override with: TEMPLATES_DIR=/path/to/templates scaffold ...
+
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Guard
+# ---------------------------------------------------------------------------
+if ! command -v copier >/dev/null 2>&1; then
+    error "copier is not installed. Install with: pip install copier"
+    exit 1
+fi
+
+if [[ ! -d "$TEMPLATES_DIR" ]]; then
+    error "Templates directory not found: $TEMPLATES_DIR"
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+case "${1:-}" in
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    list|-l)
+        show_list
+        exit 0
+        ;;
+    "")
+        if ! command -v fzf >/dev/null 2>&1; then
+            show_list
+            error "fzf not found — pass a template name directly: scaffold <template>"
+            exit 1
+        fi
+        template=$(pick_with_fzf) || { warn "No template selected."; exit 1; }
+        dest="."
+        ;;
+    *)
+        template="$1"
+        dest="${2:-.}"
+        ;;
+esac
+
+template_path="$TEMPLATES_DIR/$template"
+if [[ ! -d "$template_path" ]]; then
+    error "Template '$template' not found in $TEMPLATES_DIR"
+    info  "Run 'scaffold list' to see available templates"
+    exit 1
+fi
+
+info "Scaffolding '${f_bold}${template}${f_reset}' into '${dest}'"
+copier copy "$template_path" "$dest"
