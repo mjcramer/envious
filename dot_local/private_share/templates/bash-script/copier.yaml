@@ -1,0 +1,14 @@
+_min_copier_version: "9.0.0"
+
+script_name:
+  type: str
+  help: "Script name without extension (e.g., deploy-service)"
+
+description:
+  type: str
+  help: "One-line description of what this script does"
+
+use_colors:
+  type: bool
+  help: "Include ANSI color variables and colored output helpers?"
+  default: true

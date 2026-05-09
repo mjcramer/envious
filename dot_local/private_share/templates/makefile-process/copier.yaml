@@ -1,0 +1,9 @@
+_min_copier_version: "9.0.0"
+
+process_name:
+  type: str
+  help: "Name of the process (used for PID file and make targets, e.g., server)"
+
+start_command:
+  type: str
+  help: "Command used to start the process (e.g., npm run dev)"

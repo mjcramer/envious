@@ -94,4 +94,4 @@ copier copy ~/.local/share/templates/<template-name> <destination>
 
 Both ask for `project_name`, `description`, `github_username`, `author_name`, `author_email`. The package is derived as `io.github.<github_username>.<project_slug>` and the source tree is generated under `src/main/scala/io/github/{{github_username}}/{{project_slug}}/` using copier's Jinja2 directory-name rendering.
 
-**Other templates:** `python_argparse`, `http-server`, `flake-shell`, plus standalone bash/Nix snippets.
+**Other templates:** `bash-script` (getopts, logging, arch detection, source guard; `use_colors` parameter injects ANSI variables and colored helpers), `python-subcommands`, `python_argparse`, `http-server`, `makefile-process`.

@@ -1,0 +1,38 @@
+SHELL  := /usr/bin/env bash
+PID_FILE := {{ process_name }}.PID
+
+help: ## Print this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+.PHONY: start
+start: ## Start {{ process_name }} in the background
+start: $(PID_FILE)
+
+$(PID_FILE):
+	@echo "Starting {{ process_name }}..."
+	@{{ start_command }} & echo "$$!" > $(PID_FILE)
+	@echo "{{ process_name }} started (PID $$(cat $(PID_FILE)))"
+
+.PHONY: stop
+stop: ## Stop {{ process_name }}
+	@if [ -f $(PID_FILE) ]; then \
+		echo "Stopping {{ process_name }} (PID $$(cat $(PID_FILE)))..."; \
+		kill "$$(cat $(PID_FILE))" && rm -f $(PID_FILE); \
+		echo "{{ process_name }} stopped"; \
+	else \
+		echo "{{ process_name }} is not running"; \
+	fi
+
+.PHONY: restart
+restart: ## Restart {{ process_name }}
+restart: stop start
+
+.PHONY: status
+status: ## Show whether {{ process_name }} is running
+	@if [ -f $(PID_FILE) ] && kill -0 "$$(cat $(PID_FILE))" 2>/dev/null; then \
+		echo "{{ process_name }} is running (PID $$(cat $(PID_FILE)))"; \
+	else \
+		echo "{{ process_name }} is not running"; \
+		rm -f $(PID_FILE); \
+	fi

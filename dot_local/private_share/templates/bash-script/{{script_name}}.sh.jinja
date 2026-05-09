@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+
+{% if use_colors %}
+# ---------------------------------------------------------------------------
+# ANSI colors
+# ---------------------------------------------------------------------------
+f_red='\033[0;31m'
+f_grn='\033[0;32m'
+f_ylw='\033[0;33m'
+f_blu='\033[0;34m'
+f_mag='\033[0;35m'
+f_cyn='\033[0;36m'
+f_wht='\033[0;37m'
+f_red_b='\033[1;31m'
+f_grn_b='\033[1;32m'
+f_ylw_b='\033[1;33m'
+f_blu_b='\033[1;34m'
+f_bold='\033[1m'
+f_reset='\033[0m'
+b_red='\033[41m'
+b_grn='\033[42m'
+b_ylw='\033[43m'
+b_blu='\033[44m'
+
+{% endif %}
+# ---------------------------------------------------------------------------
+# Logging helpers
+# ---------------------------------------------------------------------------
+{% if use_colors %}
+info()    { printf "${f_grn}[INFO]${f_reset}  %s\n"    "$*"; }
+warn()    { printf "${f_ylw}[WARN]${f_reset}  %s\n"    "$*" >&2; }
+error()   { printf "${f_red}[ERROR]${f_reset} %s\n"    "$*" >&2; }
+heading() {
+    local msg="$1" char="${2:-=}"
+    local line
+    line=$(printf "${char}%.0s" $(seq 1 $((${#msg} + 4))))
+    printf "\n${f_ylw}${f_bold}%s\n| %s |\n%s${f_reset}\n\n" "$line" "$msg" "$line"
+}
+{% else %}
+info()    { printf "[INFO]  %s\n" "$*"; }
+warn()    { printf "[WARN]  %s\n" "$*" >&2; }
+error()   { printf "[ERROR] %s\n" "$*" >&2; }
+heading() {
+    local msg="$1" char="${2:-=}"
+    local line
+    line=$(printf "${char}%.0s" $(seq 1 $((${#msg} + 4))))
+    printf "\n%s\n| %s |\n%s\n\n" "$line" "$msg" "$line"
+}
+{% endif %}
+
+# ---------------------------------------------------------------------------
+# Architecture detection
+# ---------------------------------------------------------------------------
+detect_arch() {
+    case "$(uname -s)" in
+        Darwin) echo "darwin" ;;
+        Linux)  echo "linux"  ;;
+        *)      echo "unknown" ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Usage
+# ---------------------------------------------------------------------------
+usage() {
+    cat <<EOF
+{{ description }}
+
+Usage: ${0##*/} [options] <arg>
+
+Options:
+  -h          Show this help and exit
+  -v          Enable verbose output
+  -o VALUE    Set output value (default: ${OUTPUT})
+
+Environment:
+  VERBOSE     Set to 'true' to enable verbose output (same as -v)
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+VERBOSE=${VERBOSE:-false}
+OUTPUT="default"
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+while getopts ":hvo:" opt; do
+    case $opt in
+        h) usage; exit 0 ;;
+        v) VERBOSE=true ;;
+        o) OUTPUT="$OPTARG" ;;
+        \?) error "Unknown option: -$OPTARG"; exit 1 ;;
+        :)  error "Option -$OPTARG requires an argument"; exit 1 ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+main() {
+    local arch
+    arch=$(detect_arch)
+
+    heading "{{ script_name }}"
+    [[ "$VERBOSE" == true ]] && info "arch=${arch} output=${OUTPUT} script_dir=${SCRIPT_DIR}"
+
+    # TODO: implement
+    info "Running {{ script_name }}"
+}
+
+# Guard: allow sourcing without executing
+(return 0 2>/dev/null) || main "$@"

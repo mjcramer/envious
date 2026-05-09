@@ -1,0 +1,9 @@
+_min_copier_version: "9.0.0"
+
+script_name:
+  type: str
+  help: "Script name without extension (e.g., my-tool)"
+
+description:
+  type: str
+  help: "One-line description of what this script does"
