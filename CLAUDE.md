@@ -83,10 +83,16 @@ Fisher plugins: `autopair.fish`, `tide@v6`, `franciscolourenco/done`.
 
 ## Copier templates
 
-`dot_local/private_share/templates/` contains copier scaffolding templates. To scaffold from one:
+`dot_local/private_share/templates/` contains copier scaffolding templates. Use the `scaffold` wrapper (deployed to `~/.local/bin/scaffold`) instead of invoking copier directly:
+
 ```bash
-copier copy ~/.local/share/templates/<template-name> <destination>
+scaffold                     # fzf picker with variable preview
+scaffold list                # plain list of available templates
+scaffold <template>          # scaffold into current directory
+scaffold <template> <dest>   # scaffold into destination
 ```
+
+Fish tab completion is wired up — `scaffold <TAB>` expands to template names. Override the templates directory with `TEMPLATES_DIR=/path scaffold ...`.
 
 **Scala templates** (both use Scala 3.8, sbt 1.12, Java 21, Docker via sbt-native-packager, GitHub Actions):
 - `scala-zio` — ZIO 2 + ZIO HTTP + ZIO Config (HOCON) + ZIO Logging/SLF4J

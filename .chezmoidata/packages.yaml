@@ -59,7 +59,6 @@ packages:
       - beyond-compare
       - docker-desktop
       - firefox
-      - intellij-idea
       - iterm2
       - libreoffice
       - sizeup
