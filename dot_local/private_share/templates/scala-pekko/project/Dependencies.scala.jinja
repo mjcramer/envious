@@ -1,0 +1,48 @@
+import sbt.*
+
+object Versions {
+  val logback      = "1.5.32"
+  val pekko        = "1.6.0"
+  val pekkoHttp    = "1.6.0"
+  val pureconfig   = "0.17.8"
+  val scala        = "3.8.3"
+  val scalaLogging = "3.9.5"
+  val scalatest    = "3.2.20"
+}
+
+object Modules {
+  val logback          = "ch.qos.logback"             %  "logback-classic"         % Versions.logback
+  val pekkoActorTyped  = "org.apache.pekko"           %% "pekko-actor-typed"       % Versions.pekko
+  val pekkoHttp        = "org.apache.pekko"           %% "pekko-http"              % Versions.pekkoHttp
+  val pekkoHttpSpray   = "org.apache.pekko"           %% "pekko-http-spray-json"   % Versions.pekkoHttp
+  val pekkoStream      = "org.apache.pekko"           %% "pekko-stream"            % Versions.pekko
+  val pekkoTestkit     = "org.apache.pekko"           %% "pekko-actor-testkit-typed" % Versions.pekko
+  val pureconfig       = "com.github.pureconfig"      %% "pureconfig-core"         % Versions.pureconfig
+  val scalaLogging     = "com.typesafe.scala-logging" %% "scala-logging"           % Versions.scalaLogging
+  val scalatest        = "org.scalatest"              %% "scalatest"               % Versions.scalatest
+}
+
+object Dependencies {
+
+  val core = Seq(
+    Modules.pekkoActorTyped,
+    Modules.pekkoStream,
+    Modules.scalaLogging,
+    Modules.logback,
+  )
+
+  val config = Seq(
+    Modules.pureconfig,
+  )
+
+  val http = Seq(
+    Modules.pekkoHttp,
+    Modules.pekkoHttpSpray,
+  )
+
+  val testing = Seq(
+    Modules.scalatest,
+    Modules.pekkoTestkit,
+  )
+
+}

@@ -1,0 +1,13 @@
+package io.github.{{ github_username }}.{{ project_slug }}
+
+import zio.*
+import zio.test.*
+
+object MainSpec extends ZIOSpecDefault:
+
+  def spec: Spec[TestEnvironment & Scope, Any] =
+    suite("{{ class_name }}")(
+      test("sanity check") {
+        assertTrue(1 + 1 == 2)
+      }
+    )

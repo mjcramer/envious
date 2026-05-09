@@ -1,0 +1,76 @@
+ThisBuild / scalaVersion     := Versions.scala
+ThisBuild / organization     := "io.github.{{ github_username }}"
+ThisBuild / organizationName := "{{ github_username }}"
+ThisBuild / description      := "{{ description }}"
+ThisBuild / homepage         := Some(url("https://github.com/{{ github_username }}/{{ project_name }}"))
+
+ThisBuild / scmInfo := Some(ScmInfo(
+  url("https://github.com/{{ github_username }}/{{ project_name }}"),
+  "https://github.com/{{ github_username }}/{{ project_name }}.git"
+))
+
+ThisBuild / developers := List(Developer(
+  "{{ github_username }}",
+  "{{ author_name }}",
+  "{{ author_email }}",
+  url("https://github.com/{{ github_username }}")
+))
+
+ThisBuild / licenses      := List("Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0"))
+ThisBuild / versionScheme := Some("early-semver")
+
+val runtimeJavaOptions = Seq(
+  "-Dlogback.debug=false",
+  "-Dlogback.configurationFile=logback.xml",
+)
+
+lazy val common = Seq(
+  scalacOptions ++= Seq(
+    "-deprecation",
+    "-encoding", "utf-8",
+    "-explain",
+    "-feature",
+    "-language:higherKinds",
+    "-unchecked",
+  ),
+  libraryDependencies ++=
+    Dependencies.core ++
+    Dependencies.config ++
+    Dependencies.http ++
+    Dependencies.testing.map(_ % Test),
+  git.useGitDescribe    := true,
+  Compile / run / fork  := true,
+  Compile / run / javaOptions ++= runtimeJavaOptions,
+)
+
+lazy val root = (project in file("."))
+  .enablePlugins(GitVersioning, GitBranchPrompt, JavaAppPackaging, DockerPlugin)
+  .settings(common *)
+  .settings(
+    name             := "{{ project_name }}",
+    crossScalaVersions := Nil,
+
+    Compile / mainClass             := Some("io.github.{{ github_username }}.{{ project_slug }}.Main"),
+    Compile / discoveredMainClasses := Seq(),
+    maintainer                      := "{{ author_email }}",
+    packageSummary                  := "{{ description }}",
+    packageDescription              := description.value,
+
+    Universal / packageName   := name.value,
+    Universal / javaOptions   := runtimeJavaOptions,
+
+    Docker / packageName   := name.value,
+    Docker / version       := version.value,
+    Docker / daemonUser    := "daemon",
+    Docker / daemonGroup   := "daemon",
+    dockerBaseImage        := "ghcr.io/graalvm/jdk-community:21",
+    dockerExposedPorts     := Seq(8080),
+    dockerUsername         := Some("{{ github_username }}"),
+    dockerRepository       := Some("ghcr.io"),
+    dockerUpdateLatest     := true,
+    dockerLabels           := Map(
+      "org.opencontainers.image.source"      -> "https://github.com/{{ github_username }}/{{ project_name }}",
+      "org.opencontainers.image.description" -> description.value,
+      "org.opencontainers.image.licenses"    -> "Apache-2.0"
+    ),
+  )

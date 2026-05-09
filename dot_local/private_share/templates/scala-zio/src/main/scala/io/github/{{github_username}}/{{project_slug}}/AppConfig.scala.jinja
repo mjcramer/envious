@@ -1,0 +1,11 @@
+package io.github.{{ github_username }}.{{ project_slug }}
+
+import zio.*
+import zio.config.*
+import zio.config.magnolia.*
+
+case class AppConfig(name: String, port: Int)
+
+object AppConfig:
+  val config: Config[AppConfig] =
+    deriveConfig[AppConfig].nested("{{ project_slug }}")

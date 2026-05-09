@@ -1,0 +1,14 @@
+{{ project_slug }} {
+  name = "{{ class_name }}"
+  name = ${?APP_NAME}
+  host = "0.0.0.0"
+  host = ${?HTTP_HOST}
+  port = 8080
+  port = ${?HTTP_PORT}
+}
+
+pekko {
+  loglevel = "INFO"
+  stdout-loglevel = "OFF"
+  http.server.preview.enable-http2 = on
+}

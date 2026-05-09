@@ -1,0 +1,25 @@
+package io.github.{{ github_username }}.{{ project_slug }}
+
+import zio.*
+import zio.config.typesafe.*
+import zio.http.*
+import zio.logging.backend.SLF4J
+
+object Main extends ZIOAppDefault:
+
+  override val bootstrap: ZLayer[ZIOAppArgs, Any, Any] =
+    Runtime.setConfigProvider(TypesafeConfigProvider.fromResourcePath()) ++
+    Runtime.removeDefaultLoggers >>> SLF4J.slf4j
+
+  val routes: Routes[Any, Response] =
+    Routes(
+      Method.GET / "health" -> handler(Response.text("OK")),
+    )
+
+  override def run: ZIO[ZIOAppArgs & Scope, Any, Any] =
+    for
+      config <- ZIO.config(AppConfig.config)
+      _      <- ZIO.logInfo(s"Starting {{ class_name }}: ${config.name}")
+      _      <- Server.serve(routes)
+                  .provide(Server.defaultWithPort(config.port))
+    yield ()

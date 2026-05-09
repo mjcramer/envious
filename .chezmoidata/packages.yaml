@@ -10,6 +10,7 @@ packages:
       - bash-completion
       - brew-cask-completion
       - chezmoi
+      - codex
       - coursier
       - copier
       - curl
@@ -19,6 +20,7 @@ packages:
       - fzf
       - gh
       - git
+      - gpg
       - grafana
       - graphviz
       - grc

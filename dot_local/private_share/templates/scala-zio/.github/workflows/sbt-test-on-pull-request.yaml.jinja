@@ -1,0 +1,36 @@
+{% raw %}
+name: SBT Test on Pull Request
+run-name: "SBT test for PR `${{ github.event.pull_request.title }}`"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sbt-test:
+    name: Build and Test
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        java: [21]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout (full history for sbt-git)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: graalvm-community
+          java-version: ${{ matrix.java }}
+          cache: sbt
+
+      - name: Build and test
+        run: sbt test
+{% endraw %}

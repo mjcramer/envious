@@ -1,0 +1,67 @@
+{% raw %}
+# Shared workflow: builds a Docker image and publishes to ghcr.io.
+# Triggered by sbt-publish-on-push-to-main.yaml.
+name: Build and publish Docker container
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'GitHub environment to deploy to'
+        type: string
+        required: false
+        default: dev
+      project_name:
+        description: 'sbt project name (also used as the image name)'
+        type: string
+        required: true
+      image_tag:
+        description: 'Tag to apply to the built image'
+        type: string
+        required: false
+        default: ${{ github.sha }}
+      java_version:
+        description: 'JDK version'
+        type: string
+        required: false
+        default: '21'
+    secrets:
+      CONTAINER_REGISTRY_PASSWORD:
+        required: false
+    outputs:
+      container_image:
+        description: 'The fully-qualified image reference that was pushed'
+        value: ${{ jobs.build-publish-container.outputs.container_image }}
+
+jobs:
+  build-publish-container:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      container_image: ghcr.io/${{ github.repository_owner }}/${{ inputs.project_name }}:${{ inputs.image_tag }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: graalvm-community
+          java-version: ${{ inputs.java_version }}
+          cache: sbt
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish Docker image
+        run: sbt ${{ inputs.project_name }}/Docker/publish
+{% endraw %}

@@ -1,0 +1,21 @@
+name: SBT Publish on Push to Main
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.scala'
+      - '**/*.sbt'
+      - .github/workflows/sbt-publish-on-push-to-main.yaml
+      - .github/workflows/build-publish-container.yaml
+
+jobs:
+  build-publish-container:
+    uses: ./.github/workflows/build-publish-container.yaml
+    with:
+      project_name: {{ project_name }}
+      java_version: 21
+    secrets: inherit

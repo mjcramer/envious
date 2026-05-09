@@ -1,0 +1,9 @@
+package io.github.{{ github_username }}.{{ project_slug }}
+
+import pureconfig.*
+
+case class AppConfig(
+  name: String,
+  host: String,
+  port: Int,
+) derives ConfigReader

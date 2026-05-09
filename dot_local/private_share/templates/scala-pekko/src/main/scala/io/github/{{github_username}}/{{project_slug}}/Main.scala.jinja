@@ -1,0 +1,37 @@
+package io.github.{{ github_username }}.{{ project_slug }}
+
+import org.apache.pekko.actor.typed.*
+import org.apache.pekko.actor.typed.scaladsl.*
+import org.apache.pekko.http.scaladsl.Http
+import org.apache.pekko.http.scaladsl.server.Directives.*
+import com.typesafe.scalalogging.LazyLogging
+import pureconfig.*
+import scala.concurrent.duration.*
+import scala.util.{Failure, Success}
+
+object Main extends App with LazyLogging:
+
+  ConfigSource.default.at("{{ project_slug }}").load[AppConfig] match
+    case Right(config) =>
+      implicit val system: ActorSystem[Nothing] =
+        ActorSystem(Behaviors.empty, "{{ project_name }}")
+      implicit val ec = system.executionContext
+
+      logger.info(s"Starting {{ class_name }}: ${config.name}")
+
+      val route =
+        path("health") {
+          get { complete("OK") }
+        }
+
+      Http().newServerAt(config.host, config.port).bind(route).onComplete {
+        case Success(binding) =>
+          logger.info(s"Server online at http://${binding.localAddress.getHostString}:${binding.localAddress.getPort}/")
+        case Failure(ex) =>
+          logger.error(s"Failed to bind HTTP server: ${ex.getMessage}")
+          system.terminate()
+      }
+
+    case Left(failures) =>
+      System.err.println(s"Configuration error: $failures")
+      sys.exit(1)

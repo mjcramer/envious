@@ -1,0 +1,10 @@
+.idea
+.bloop
+.bsp
+**/target
+**/__pycache__
+**/.terraform
+**/.terraform.lock.hcl
+**/*.plan
+**/*.log
+.DS_Store

@@ -1,0 +1,56 @@
+# {{ class_name }}
+
+{{ description }}
+
+## Stack
+
+- **Scala** 3 / **sbt**
+- **Apache Pekko** (actor-typed, streams) — concurrency model
+- **Pekko HTTP** — HTTP server
+- **PureConfig** (HOCON) — configuration
+- **scala-logging** + **Logback** — structured logging
+- **sbt-native-packager** — universal zip + Docker image
+- **Docker** — published to `ghcr.io/{{ github_username }}/{{ project_name }}`
+
+## Prerequisites
+
+- [mise](https://mise.jdx.dev/) (manages Java and sbt versions)
+- [Docker](https://docs.docker.com/get-docker/)
+
+```bash
+mise install   # installs Java 21 and sbt from .mise.toml
+```
+
+## Development
+
+```bash
+make build     # compile
+make test      # run tests
+make run       # run locally (reads src/main/resources/application.conf)
+make format    # scalafmt
+```
+
+## Configuration
+
+Configuration is read from `application.conf` (HOCON) under the `{{ project_slug }}` key. Override any field with an environment variable:
+
+| Key | Env override | Default |
+|-----|-------------|---------|
+| `{{ project_slug }}.name` | `APP_NAME` | `{{ class_name }}` |
+| `{{ project_slug }}.host` | `HTTP_HOST` | `0.0.0.0` |
+| `{{ project_slug }}.port` | `HTTP_PORT` | `8080` |
+
+## Docker
+
+```bash
+make docker    # builds image and loads it locally
+# or push to ghcr.io:
+sbt Docker/publish
+```
+
+## GitHub Actions
+
+| Workflow | Trigger |
+|---------|---------|
+| `sbt-test-on-pull-request` | Every PR open/sync/reopen |
+| `sbt-publish-on-push-to-main` | Push to `main` affecting Scala/sbt files |

@@ -1,0 +1,51 @@
+import sbt.*
+
+object Versions {
+  val logback      = "1.5.32"
+  val scala        = "3.8.3"
+  val zio          = "2.1.25"
+  val zioConfig    = "3.0.7"
+  val zioHttp      = "3.7.4"
+  val zioLogging   = "2.5.3"
+}
+
+object Modules {
+  val logback            = "ch.qos.logback"  %  "logback-classic"       % Versions.logback
+  val zio                = "dev.zio"         %% "zio"                   % Versions.zio
+  val zioConfig          = "dev.zio"         %% "zio-config"            % Versions.zioConfig
+  val zioConfigMagnolia  = "dev.zio"         %% "zio-config-magnolia"   % Versions.zioConfig
+  val zioConfigTypesafe  = "dev.zio"         %% "zio-config-typesafe"   % Versions.zioConfig
+  val zioHttp            = "dev.zio"         %% "zio-http"              % Versions.zioHttp
+  val zioLogging         = "dev.zio"         %% "zio-logging"           % Versions.zioLogging
+  val zioLoggingSlf4j    = "dev.zio"         %% "zio-logging-slf4j2"    % Versions.zioLogging
+  val zioStreams          = "dev.zio"         %% "zio-streams"           % Versions.zio
+  val zioTest            = "dev.zio"         %% "zio-test"              % Versions.zio
+  val zioTestSbt         = "dev.zio"         %% "zio-test-sbt"          % Versions.zio
+}
+
+object Dependencies {
+
+  val core = Seq(
+    Modules.zio,
+    Modules.zioStreams,
+    Modules.zioLogging,
+    Modules.zioLoggingSlf4j,
+    Modules.logback,
+  )
+
+  val config = Seq(
+    Modules.zioConfig,
+    Modules.zioConfigMagnolia,
+    Modules.zioConfigTypesafe,
+  )
+
+  val http = Seq(
+    Modules.zioHttp,
+  )
+
+  val testing = Seq(
+    Modules.zioTest,
+    Modules.zioTestSbt,
+  )
+
+}

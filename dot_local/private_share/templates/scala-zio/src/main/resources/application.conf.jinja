@@ -1,0 +1,6 @@
+{{ project_slug }} {
+  name = "{{ class_name }}"
+  name = ${?APP_NAME}
+  port = 8080
+  port = ${?HTTP_PORT}
+}

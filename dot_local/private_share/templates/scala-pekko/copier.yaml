@@ -1,0 +1,31 @@
+_min_copier_version: "9.0.0"
+
+project_name:
+  type: str
+  help: "Project name in kebab-case (e.g., my-service)"
+
+description:
+  type: str
+  help: "Short project description"
+
+github_username:
+  type: str
+  help: "GitHub username or organization"
+
+author_name:
+  type: str
+  help: "Your full name"
+
+author_email:
+  type: str
+  help: "Your email address"
+
+project_slug:
+  type: str
+  default: "{{ project_name | lower | replace('-', '') | replace('_', '') }}"
+  when: false
+
+class_name:
+  type: str
+  default: "{{ project_name | replace('-', ' ') | replace('_', ' ') | title | replace(' ', '') }}"
+  when: false
