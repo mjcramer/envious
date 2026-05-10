@@ -56,9 +56,11 @@ packages:
       - 1password
       - 1password-cli
       - beyond-compare
+      - codex
       - docker-desktop
       - firefox
       - iterm2
+      - jetbrains-toolbox
       - sizeup
       - spotify
       - visual-studio-code
