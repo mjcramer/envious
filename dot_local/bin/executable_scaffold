@@ -6,8 +6,8 @@ TEMPLATES_DIR="${TEMPLATES_DIR:-$HOME/.local/share/templates}"
 # ---------------------------------------------------------------------------
 # ANSI helpers
 # ---------------------------------------------------------------------------
-f_grn='\033[0;32m'; f_ylw='\033[0;33m'; f_red='\033[0;31m'
-f_cyn='\033[0;36m'; f_bold='\033[1m'; f_reset='\033[0m'
+f_grn=$'\033[0;32m'; f_ylw=$'\033[0;33m'; f_red=$'\033[0;31m'
+f_cyn=$'\033[0;36m'; f_bold=$'\033[1m';  f_reset=$'\033[0m'
 info()  { printf "${f_grn}[INFO]${f_reset}  %s\n" "$*"; }
 warn()  { printf "${f_ylw}[WARN]${f_reset}  %s\n" "$*" >&2; }
 error() { printf "${f_red}[ERROR]${f_reset} %s\n" "$*" >&2; }
