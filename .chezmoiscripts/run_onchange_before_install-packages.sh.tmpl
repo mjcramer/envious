@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+echo "==> chezmoi: $(basename "${BASH_SOURCE[0]}")"
 prefix="[install {{ .chezmoi.os }} packages]"
 echo
 echo "$prefix Starting package update/install..."
 
 {{ if eq .chezmoi.os "darwin" -}}
 if ! command -v brew >/dev/null 2>&1; then
-  echo "$prefix Installing brew...."
+  echo "$prefix Installing brew..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   eval "$(/opt/homebrew/bin/brew shellenv)"
 else
@@ -30,15 +31,14 @@ vscode {{ . | quote }}
 EOF
 )
 
-echo "$prefix Updating packages,,,"
+echo "$prefix Updating packages..."
 brew update && echo "$brewfile" | brew bundle --file=/dev/stdin
-echo "$prefix Cleaning up old packages"
+echo "$prefix Removing packages no longer in list..."
 echo "$brewfile" | brew bundle cleanup --force --file=/dev/stdin
 
-echo "$prefix ✅ Brew has finished sucessfully!"
+echo "$prefix ✅ Brew has finished successfully!"
 
 {{ else if eq .chezmoi.os "linux" -}}
-# Check if we're on Ubuntu or Debian
 if [ ! -f /etc/os-release ]; then
     echo "$prefix Cannot determine OS - /etc/os-release not found"
     exit 1
@@ -51,11 +51,42 @@ if [ "$ID" != "ubuntu" ] && [ "$ID" != "debian" ]; then
 fi
 
 echo "$prefix Detected $NAME - updating and installing apt packages..."
-sudo apt update && sudo apt install -y \
-{{- $len := len .packages.apt -}}
-{{- range $i, $pkg := .packages.apt -}}
-    {{ $pkg }}{{ if lt (add $i 1) $len }} \{{ end }}
-{{ end -}}
+
+desired_packages=(
+{{- range .packages.apt }}
+    "{{ . }}"
+{{- end }}
+)
+
+sudo apt update && sudo apt install -y "${desired_packages[@]}"
+
+# Remove packages that were previously managed but are no longer desired
+APT_STATE_FILE="/var/lib/chezmoi/managed-apt-packages"
+sudo mkdir -p "$(dirname "$APT_STATE_FILE")"
+
+if sudo test -f "$APT_STATE_FILE"; then
+    echo "$prefix Checking for packages to remove..."
+    to_remove=()
+    while IFS= read -r pkg; do
+        [[ -z "$pkg" ]] && continue
+        if ! printf '%s\n' "${desired_packages[@]}" | grep -qx "$pkg"; then
+            if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+                to_remove+=("$pkg")
+            fi
+        fi
+    done < <(sudo cat "$APT_STATE_FILE")
+
+    if [ "${#to_remove[@]}" -gt 0 ]; then
+        echo "$prefix Removing packages no longer in list: ${to_remove[*]}"
+        sudo apt remove -y "${to_remove[@]}"
+        sudo apt autoremove -y
+    else
+        echo "$prefix No packages to remove."
+    fi
+fi
+
+# Persist current list as state for the next run
+printf '%s\n' "${desired_packages[@]}" | sort | sudo tee "$APT_STATE_FILE" > /dev/null
 
 echo "$prefix ✅ Apt package installation complete!"
 
@@ -69,23 +100,23 @@ fi
 if command -v az &>/dev/null; then
     echo "$prefix Azure CLI already installed."
 else
-    echo "Installing Azure CLI..."
+    echo "$prefix Installing Azure CLI..."
     curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 fi
 
 if command -v databricks &>/dev/null; then
     echo "$prefix Databricks CLI is already installed."
 else
-    echo "Installing databricks CLI..."
+    echo "$prefix Installing Databricks CLI..."
     curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sudo bash
 fi
-{{ else }}
 
+{{ else }}
 echo "Unable to determine package manager for {{ .chezmoi.os }}, skipping package installation..."
 
 {{ end -}}
 
-echo "Installing Claude Code..."
+echo "$prefix Installing Claude Code..."
 curl -fsSL https://claude.ai/install.sh | bash
 
 echo "$prefix Package install completed."
