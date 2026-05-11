@@ -1,0 +1,89 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk:*)",
+      "Bash(az:*)",
+      "Bash(cat:*)",
+      "Bash(cd:*)",
+      "Bash(cp:*)",
+      "Bash(curl:*)",
+      "Bash(databricks:*)",
+      "Bash(docker:*)",
+      "Bash(echo:*)",
+      "Bash(find:*)",
+      "Bash(gh:*)",
+      "Bash(git:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(jar:*)",
+      "Bash(javap:*)",
+      "Bash(kill:*)",
+      "Bash(kubectl:*)",
+      "Bash(ls:*)",
+      "Bash(make:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(mvn:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(pip:*)",
+      "Bash(pkill:*)",
+      "Bash(pwd)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(rm:*)",
+      "Bash(rmdir:*)",
+      "Bash(sort:*)",
+      "Bash(tail:*)",
+      "Bash(terraform:*)",
+      "Bash(touch:*)",
+      "Bash(tree:*)",
+      "Bash(unzip:*)",
+      "Bash(wget:*)",
+      "Bash(xargs:*)",
+      "Edit(**)",
+      "Read(**)",
+      "Read(/tmp)",
+      "Write(**)",
+      "Write(/home/mcramer/.claude/**)",
+      "Skill(update-config)",
+      "mcp__notion__notion-create-pages",
+      "mcp__notion__notion-fetch",
+      "mcp__notion__notion-search",
+      "mcp__notion__notion-update-page",
+      "mcp__claude_ai_Notion__notion-fetch",
+      "mcp__claude_ai_Notion__notion-search",
+      "mcp__claude_ai_Notion__notion-update-page"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/.ssh/**)",
+      "Write(./.env)",
+      "Write(./.env.*)"
+    ],
+    "ask": [
+      "Bash(ssh:*)",
+      "Bash(sudo:*)"
+    ],
+    "defaultMode": "default"
+  },
+  "model": "opus",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '\\a'"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "input=$(cat); echo \"$(echo \"$input\" | jq -r '.cwd')\""
+  },
+  "effortLevel": "high"
+}
