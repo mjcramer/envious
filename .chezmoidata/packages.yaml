@@ -15,6 +15,7 @@ packages:
       - curl
       - direnv
       - docker-completion
+      - ffmpeg
       - fish
       - fzf
       - gh
@@ -49,6 +50,7 @@ packages:
       - unzip
       - watch
       - wget
+      - whisper-cpp
       - zookeeper
       - zsh
       - zsh-autosuggestions
