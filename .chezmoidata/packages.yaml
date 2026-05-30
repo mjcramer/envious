@@ -64,6 +64,7 @@ packages:
       - iterm2
       - jetbrains-toolbox
       - sizeup
+      - slack
       - spotify
       - visual-studio-code
       - zoom
