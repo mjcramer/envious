@@ -39,7 +39,6 @@ packages:
       - mise
       - mysql
       - neovim
-      - ngrok
       - nmap
       - openssh
       - pre-commit
@@ -65,6 +64,7 @@ packages:
       - firefox
       - iterm2
       - jetbrains-toolbox
+      - ngrok
       - sizeup
       - slack
       - spotify
