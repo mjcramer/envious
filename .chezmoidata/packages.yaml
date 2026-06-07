@@ -4,7 +4,6 @@ packages:
     taps:
       - derailed/k9s
     brews:
-      - python@3.13
       - awscli
       - bash
       - bash-completion
@@ -46,12 +45,14 @@ packages:
       - pre-commit
       - prometheus
       - protobuf
+      - python@3.13
       - shellcheck
       - tree
       - unzip
       - watch
       - wget
       - whisper-cpp
+      - yq
       - zookeeper
       - zsh
       - zsh-autosuggestions
@@ -95,6 +96,7 @@ packages:
 
   apt:
     - apt-transport-https
+    - awscli
     - base-files
     - bash
     - bash-completion
@@ -106,6 +108,7 @@ packages:
     - debianutils
     - diffutils
     - direnv
+    - ffmpeg
     - findutils
     - fish
     - fzf
@@ -122,6 +125,8 @@ packages:
     - iftop
     - init
     - jq
+    - kafkacat
+    - kubectx
     - lsb-release
     - lsd
     - make
@@ -132,6 +137,8 @@ packages:
     - openssh-server
     - pre-commit
     - prometheus
+    - protobuf-compiler
+    - python3
     - shellcheck
     - sshpass
     - tree
@@ -142,4 +149,8 @@ packages:
     - watch
     - wget
     - wslu
+    - yq
     - zip
+    - zookeeperd
+    - zsh
+    - zsh-autosuggestions
