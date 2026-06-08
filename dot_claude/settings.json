@@ -47,6 +47,7 @@
       "Read(/tmp)",
       "Write(**)",
       "Write(/home/mcramer/.claude/**)",
+      "Write(/Users/mjcramer/.claude/**)",
       "Skill(update-config)",
       "mcp__notion__notion-create-pages",
       "mcp__notion__notion-fetch",
@@ -60,8 +61,13 @@
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(**/.ssh/**)",
+      "Read(./.mise.toml)",
+      "Read(**/.mise.toml)",
+      "Read(**/.mise.local.toml)",
       "Write(./.env)",
-      "Write(./.env.*)"
+      "Write(./.env.*)",
+      "Write(./.mise.toml)",
+      "Write(**/.mise.toml)"
     ],
     "ask": [
       "Bash(ssh:*)",
@@ -86,5 +92,6 @@
     "type": "command",
     "command": "input=$(cat); echo \"$(echo \"$input\" | jq -r '.cwd')\""
   },
-  "effortLevel": "high"
+  "effortLevel": "high",
+  "skipDangerousModePermissionPrompt": true
 }
