@@ -45,9 +45,9 @@
       "Edit(**)",
       "Read(**)",
       "Read(/tmp)",
-      "Write(**)",
-      "Write(/home/mcramer/.claude/**)",
-      "Write(/Users/mjcramer/.claude/**)",
+      "Edit(**)",
+      "Edit(/home/mcramer/.claude/**)",
+      "Edit(/Users/mjcramer/.claude/**)",
       "Skill(update-config)",
       "mcp__notion__notion-create-pages",
       "mcp__notion__notion-fetch",
@@ -64,10 +64,10 @@
       "Read(./.mise.toml)",
       "Read(**/.mise.toml)",
       "Read(**/.mise.local.toml)",
-      "Write(./.env)",
-      "Write(./.env.*)",
-      "Write(./.mise.toml)",
-      "Write(**/.mise.toml)"
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Edit(./.mise.toml)",
+      "Edit(**/.mise.toml)"
     ],
     "ask": [
       "Bash(ssh:*)",
