@@ -14,7 +14,7 @@ sh -c "$(curl -fsLS get.chezmoi.io/lb)" -- init --apply mjcramer/envious
 - **Dotfiles**: `zsh`, `fish`, `git`, `htop`, `iterm2`, `nvim` and more under `private_dot_config/` and top-level dotfiles
 - **Scripts**: bootstrap and helper scripts in `dot_local/bin/` and `.chezmoiscripts/`
 - **Packages**: curated package lists (e.g., `apt`) in `.chezmoidata/packages.yaml`
-- **Templates**: reusable script templates under `dot_local/private_share/templates/`
+- **Templates**: reusable Copier project templates under `dot_local/private_share/templates/`
 
 ### Requirements
 - macOS or Linux
@@ -42,6 +42,22 @@ chezmoi init --source . --apply
 - Dotfiles are placed into your home directory (respecting templates and privacy rules)
 - Helper scripts in `.chezmoiscripts/` may run on certain events (e.g., first run, changes)
 - Package install scripts may run to install common tools
+
+### Copier templates
+Templates are installed under `~/.local/share/templates/` and are normally used through the `scaffold` wrapper:
+
+```bash
+scaffold list
+scaffold <template-name> <destination>
+```
+
+The `terraform-makefile` template prompts for a provider (`gcp` or `aws`) and a space-separated list of component names:
+
+```bash
+scaffold terraform-makefile ./infrastructure
+```
+
+It generates one root `terraform.mk` and one `Makefile` in each named component directory. Only the selected provider's commands are generated. AWS projects require `AWS_REGION`; `AWS_TERRAFORM_BUCKET`, `AWS_KMS_ALIAS`, and `AWS_EKS_CLUSTER_NAME` can override the generated defaults.
 
 ### macOS notes
 - Homebrew packages are managed via `Brewfile`

@@ -1,0 +1,27 @@
+_min_copier_version: "9.0.0"
+
+provider:
+  type: str
+  help: "Which cloud provider will host this Terraform project?"
+  choices:
+    GCP: gcp
+    AWS: aws
+  default: gcp
+
+components:
+  type: str
+  help: "Enter Terraform component names separated by spaces"
+  placeholder: "network security"
+  validator: >-
+    {% set component_names = components.split() %}
+    {% if not component_names %}
+    Enter at least one component name.
+    {% elif component_names | unique | list | length != component_names | length %}
+    Component names must be unique.
+    {% else %}
+    {% for component in component_names %}
+    {% if component is not string or not (component | regex_search('^[a-z][a-z0-9-]*$')) %}
+    Use lowercase kebab-case names beginning with a letter.
+    {% endif %}
+    {% endfor %}
+    {% endif %}

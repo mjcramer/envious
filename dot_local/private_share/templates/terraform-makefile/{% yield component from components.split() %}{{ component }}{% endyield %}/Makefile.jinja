@@ -1,0 +1,36 @@
+# The generated directory name identifies the Terraform component.
+export COMPONENT := ${TF_VAR_environment}-{{ component }}
+export TF_VAR_component := ${COMPONENT}
+
+# Keep `make` useful without requiring cloud tooling just to print help.
+.DEFAULT_GOAL := help
+
+include ../terraform.mk
+
+.PHONY: validate-component
+validate-component:
+	@test -n "$(TF_VAR_environment)" || { printf 'TF_VAR_environment is undefined\n' >&2; exit 1; }
+
+# Add component-specific validation to the shared check target.
+check: validate-component
+
+.PHONY: help
+help: ## Print this help message
+	@printf "\033[34mmake\033[0m [\033[36m<target>\033[0m]...\n"
+	@printf "   where \033[36m<target>\033[0m can be one or more of the following...\n\n"
+	@grep -h -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+	@printf "\n"
+
+.PHONY: credentials
+credentials: check ## {% if provider == "gcp" %}Generate GKE cluster credentials{% else %}Configure EKS kubeconfig{% endif %}
+{% if provider == "gcp" %}
+	@cluster_project="$$(gcloud beta runtime-config configs variables get-value gcp_project_id --config-name "$(TF_VAR_environment)-deploy-config" --project "$(GCP_PROJECT_ID)")"; \
+	cluster_region="$$(gcloud beta runtime-config configs variables get-value gcp_region --config-name "$(TF_VAR_environment)-deploy-config" --project "$(GCP_PROJECT_ID)")"; \
+	cluster_name="$$(gcloud beta runtime-config configs variables get-value gcp_cluster_name --config-name "$(TF_VAR_environment)-deploy-config" --project "$(GCP_PROJECT_ID)")"; \
+	gcloud container clusters get-credentials "$$cluster_name" --project "$$cluster_project" --region "$$cluster_region"
+{% else %}
+	@aws eks update-kubeconfig --region "$(AWS_REGION)" --name "$(AWS_EKS_CLUSTER_NAME)"
+{% endif %}
+
+print-%: ## Print the value of a variable (e.g., make print-TF_VAR_environment)
+	@printf '%s=%s\n' "$*" "$($*)"
