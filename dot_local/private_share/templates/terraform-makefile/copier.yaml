@@ -27,6 +27,23 @@ owner_account:
     AWS owner accounts must be 12-digit account IDs.
     {% endif %}
 
+modules:
+  type: str
+  help: "Enter Terraform module names separated by spaces (leave blank for none)"
+  placeholder: "subsystem system"
+  default: ""
+  validator: >-
+    {% set module_names = modules.split() %}
+    {% if module_names | unique | list | length != module_names | length %}
+    Module names must be unique.
+    {% else %}
+    {% for module in module_names %}
+    {% if module is not string or not (module | regex_search('^[a-z][a-z0-9-]*$')) %}
+    Use lowercase kebab-case names beginning with a letter.
+    {% endif %}
+    {% endfor %}
+    {% endif %}
+
 components:
   type: str
   help: "Enter Terraform component names separated by spaces"

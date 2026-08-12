@@ -17,7 +17,7 @@ scaffold <template-name> <destination>
 | `python_argparse` | Python CLI with simple argparse (no subcommands) | `packages` |
 | `http-server` | Minimal Python HTTP server | `packages` |
 | `makefile-process` | Makefile start/stop/restart/status targets for a background process | `process_name`, `start_command` |
-| `terraform-makefile` | Terraform root Makefile plus provider-specific component Makefiles | `provider`, `project_name`, `owner_account`, `components` |
+| `terraform-makefile` | Terraform root Makefile plus provider-specific component Makefiles | `provider`, `project_name`, `owner_account`, `modules`, `components` |
 
 The `terraform-makefile` template requires `AWS_REGION` for AWS projects. Enter a GCP owner email address or a 12-digit AWS owner account ID. `AWS_TERRAFORM_BUCKET`, `AWS_KMS_ALIAS`, and `AWS_EKS_CLUSTER_NAME` may be overridden from their generated defaults.
 
@@ -29,11 +29,13 @@ Run:
 scaffold terraform-makefile ./infrastructure
 ```
 
-Choose `gcp` or `aws`, enter a project name containing only alphanumeric characters and dashes, enter the owner account, then enter component names separated by spaces, for example:
+Choose `gcp` or `aws`, enter a project name containing only alphanumeric characters and dashes, enter the owner account, optionally enter module names (blank means no modules), then enter component names separated by spaces, for example:
 
 ```text
 network security
 ```
+
+Any module names entered at the prompt are prefixed with the project name in `terraform.mk`. For example, project `my-project` with modules `subsystem system` generates `my-project-subsystem my-project-system`; no modules are generated when the module prompt is left blank.
 
 The generated project contains only the selected provider implementation:
 
