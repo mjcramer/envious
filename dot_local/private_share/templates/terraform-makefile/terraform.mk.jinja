@@ -164,8 +164,10 @@ REQUIRED_TOOLS := terraform aws
 AWS_REGION ?= $(AWS_DEFAULT_REGION)
 AWS_OWNER_ACCOUNT_ID ?= {{ owner_account }}
 AWS_TERRAFORM_BUCKET ?= $(COMPONENT)-terraform-state
+AWS_TERRAFORM_KEY ?= $(COMPONENT)/terraform.tfstate
 AWS_KMS_ALIAS ?= alias/$(COMPONENT)-terraform-encryption
 AWS_EKS_CLUSTER_NAME ?= $(COMPONENT)
+terraform_backend_opts := -backend-config="bucket=$(AWS_TERRAFORM_BUCKET)" -backend-config="key=$(AWS_TERRAFORM_KEY)" -backend-config="region=$(AWS_REGION)" -backend-config="encrypt=true"
 
 terraform_modules := $(addprefix {{ project_name }}-, {{ modules }})
 terraform_files := $(wildcard *.tf)
@@ -224,16 +226,16 @@ storage: check encryption ## Create and configure the S3 Terraform state bucket
 
 ${terraform_state}:
 	@printf "Initializing terraform state...\n"
-	@terraform init
+	@terraform init $(terraform_backend_opts)
 
 .PHONY: init
 init: cleaner check ## Initialize terraform
 	@printf "Initializing terraform with upgrade...\n"
-	@terraform init -upgrade
+	@terraform init -upgrade $(terraform_backend_opts)
 
 .PHONY: reinit
 reinit: check ## Reinitialize Terraform and migrate existing state
-	@terraform init -upgrade -migrate-state
+	@terraform init -upgrade -migrate-state $(terraform_backend_opts)
 
 .PHONY: clean
 clean: ## Remove the generated Terraform plan

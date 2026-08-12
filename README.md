@@ -57,7 +57,7 @@ The `terraform-makefile` template prompts for a provider (`gcp` or `aws`), a pro
 scaffold terraform-makefile ./infrastructure
 ```
 
-It generates one root `terraform.mk` and one `Makefile` in each named component directory. Only the selected provider's commands are generated. Any modules entered at the prompt are prefixed with the project name in `terraform.mk`; no modules are included by default. AWS projects require `AWS_REGION`; `AWS_TERRAFORM_BUCKET`, `AWS_KMS_ALIAS`, and `AWS_EKS_CLUSTER_NAME` can override the generated defaults.
+It generates one root `terraform.mk`, a provider/backend `main.tf`, and one `Makefile` in each named component directory. Only the selected provider's commands are generated. Any modules entered at the prompt are prefixed with the project name in `terraform.mk`; no modules are included by default. AWS projects require `AWS_REGION`; `AWS_TERRAFORM_BUCKET`, `AWS_TERRAFORM_KEY`, `AWS_KMS_ALIAS`, and `AWS_EKS_CLUSTER_NAME` can override the generated defaults.
 
 Run the generated bootstrap targets from each component directory. Set `TF_VAR_environment` and the provider-specific variables first. For GCP, run `make project`, `make encryption`, `make storage`, `make init`, then `make plan` and `make apply`; GCP also requires `GCP_BILLING_ACCOUNT`, `GCP_PROJECT_ID`, and `GCP_REGION`. For AWS, set `AWS_REGION`, run `make project`, `make encryption`, `make storage`, `make init`, then `make plan` and `make apply`. The AWS `project` target verifies the active credentials belong to the configured owner account. Run `make credentials` after applying when a Kubernetes cluster is provisioned.
 

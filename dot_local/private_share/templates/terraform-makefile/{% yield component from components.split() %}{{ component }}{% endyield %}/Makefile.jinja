@@ -1,6 +1,12 @@
 # The generated directory name identifies the Terraform component.
 export COMPONENT := ${TF_VAR_environment}-{{ component }}
 export TF_VAR_component := ${COMPONENT}
+{% if provider == "gcp" %}
+export TF_VAR_gcp_project_id := ${GCP_PROJECT_ID}
+export TF_VAR_gcp_region := ${GCP_REGION}
+{% else %}
+export TF_VAR_aws_region := ${AWS_REGION}
+{% endif %}
 
 # Keep `make` useful without requiring cloud tooling just to print help.
 .DEFAULT_GOAL := help

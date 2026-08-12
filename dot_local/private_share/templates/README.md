@@ -19,7 +19,7 @@ scaffold <template-name> <destination>
 | `makefile-process` | Makefile start/stop/restart/status targets for a background process | `process_name`, `start_command` |
 | `terraform-makefile` | Terraform root Makefile plus provider-specific component Makefiles | `provider`, `project_name`, `owner_account`, `modules`, `components` |
 
-The `terraform-makefile` template requires `AWS_REGION` for AWS projects. Enter a GCP owner email address or a 12-digit AWS owner account ID. `AWS_TERRAFORM_BUCKET`, `AWS_KMS_ALIAS`, and `AWS_EKS_CLUSTER_NAME` may be overridden from their generated defaults.
+The `terraform-makefile` template requires `AWS_REGION` for AWS projects. Enter a GCP owner email address or a 12-digit AWS owner account ID. Each component includes a provider/backend `main.tf`. `AWS_TERRAFORM_BUCKET`, `AWS_TERRAFORM_KEY`, `AWS_KMS_ALIAS`, and `AWS_EKS_CLUSTER_NAME` may be overridden from their generated defaults.
 
 ### Terraform Makefile
 
@@ -42,8 +42,12 @@ The generated project contains only the selected provider implementation:
 ```text
 infrastructure/
 ├── terraform.mk
-├── network/Makefile
-└── security/Makefile
+├── network/
+│   ├── main.tf
+│   └── Makefile
+└── security/
+    ├── main.tf
+    └── Makefile
 ```
 
 ### Bootstrap components

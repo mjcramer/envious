@@ -1,0 +1,59 @@
+{% if provider == "gcp" %}
+terraform {
+  # https://developer.hashicorp.com/terraform/language/backend/gcs
+  backend "gcs" {
+    bucket = "{{ project_name }}-terraform"
+    prefix = "{{ component }}"
+  }
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 6.43"
+    }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 6.43"
+    }
+  }
+}
+
+variable "gcp_project_id" {
+  type = string
+}
+
+variable "gcp_region" {
+  type = string
+}
+
+provider "google" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
+}
+
+provider "google-beta" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
+}
+{% elif provider == "aws" %}
+terraform {
+  # Backend settings are supplied by the generated Makefile so its bucket,
+  # key, region, and override variables remain the single source of truth.
+  backend "s3" {}
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+variable "aws_region" {
+  type = string
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+{% endif %}
