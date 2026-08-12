@@ -7,7 +7,7 @@ define color
 \033[${1}m${2}\033[0m
 endef
 
-terraform_modules := {{ project_name }}-subsystem {{ project_name }}-system {{ project_name }}-cluster
+terraform_modules := $(addprefix {{ project_name }}-, {{ components }})
 terraform_files := $(wildcard *.tf)
 terraform_files += $(foreach module, ${terraform_modules}, $(wildcard ../modules/${module}/*.tf))
 terraform_plan := {{ project_name }}-${COMPONENT}.plan
@@ -167,7 +167,7 @@ AWS_TERRAFORM_BUCKET ?= $(COMPONENT)-terraform-state
 AWS_KMS_ALIAS ?= alias/$(COMPONENT)-terraform-encryption
 AWS_EKS_CLUSTER_NAME ?= $(COMPONENT)
 
-terraform_modules := {{ project_name }}-subsystem {{ project_name }}-system {{ project_name }}-cluster
+terraform_modules := $(addprefix {{ project_name }}-, {{ components }})
 terraform_files := $(wildcard *.tf)
 terraform_files += $(foreach module, ${terraform_modules}, $(wildcard ../modules/${module}/*.tf))
 terraform_plan := {{ project_name }}-${COMPONENT}.plan
