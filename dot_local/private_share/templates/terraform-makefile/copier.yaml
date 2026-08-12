@@ -8,6 +8,25 @@ provider:
     AWS: aws
   default: gcp
 
+project_name:
+  type: str
+  help: "Enter the Terraform project name"
+  placeholder: "my-project"
+  validator: >-
+    {% if not (project_name is string and project_name | regex_search('^[A-Za-z0-9-]+$')) %}
+    Use one or more alphanumeric characters and dashes only.
+    {% endif %}
+
+owner_account:
+  type: str
+  help: "Enter the owner account"
+  validator: >-
+    {% if not (owner_account is string and owner_account | trim) %}
+    An owner account is required.
+    {% elif provider == "aws" and not (owner_account | regex_search('^[0-9]{12}$')) %}
+    AWS owner accounts must be 12-digit account IDs.
+    {% endif %}
+
 components:
   type: str
   help: "Enter Terraform component names separated by spaces"

@@ -1,18 +1,18 @@
 {% if provider == "gcp" %}
 REQUIRED_TOOLS := terraform gcloud gsutil
-GCP_ACCOUNT ?= mjcramer@gmail.com
+GCP_ACCOUNT ?= {{ owner_account }}
 
 # Macro for outputting ASCII color
 define color
 \033[${1}m${2}\033[0m
 endef
 
-terraform_modules := seer-subsystem seer-system seer-cluster
+terraform_modules := {{ project_name }}-subsystem {{ project_name }}-system {{ project_name }}-cluster
 terraform_files := $(wildcard *.tf)
 terraform_files += $(foreach module, ${terraform_modules}, $(wildcard ../modules/${module}/*.tf))
-terraform_plan := seer-${COMPONENT}.plan
+terraform_plan := {{ project_name }}-${COMPONENT}.plan
 terraform_state := .terraform
-terraform_state_bucket := seer-terraform
+terraform_state_bucket := {{ project_name }}-terraform
 terraform_encryption_keyring_name := ${COMPONENT}-keys
 terraform_encryption_key_name := terraform-encryption
 terraform_encryption_key_version := latest
@@ -162,14 +162,15 @@ output: check ## Display terraform output
 
 REQUIRED_TOOLS := terraform aws
 AWS_REGION ?= $(AWS_DEFAULT_REGION)
+AWS_OWNER_ACCOUNT_ID ?= {{ owner_account }}
 AWS_TERRAFORM_BUCKET ?= $(COMPONENT)-terraform-state
 AWS_KMS_ALIAS ?= alias/$(COMPONENT)-terraform-encryption
 AWS_EKS_CLUSTER_NAME ?= $(COMPONENT)
 
-terraform_modules := seer-subsystem seer-system seer-cluster
+terraform_modules := {{ project_name }}-subsystem {{ project_name }}-system {{ project_name }}-cluster
 terraform_files := $(wildcard *.tf)
 terraform_files += $(foreach module, ${terraform_modules}, $(wildcard ../modules/${module}/*.tf))
-terraform_plan := seer-${COMPONENT}.plan
+terraform_plan := {{ project_name }}-${COMPONENT}.plan
 terraform_state := .terraform
 terraform_encryption_key_name := $(AWS_KMS_ALIAS)
 
@@ -180,9 +181,11 @@ check: ## Check required tools, variables, and AWS credentials
 	done
 	@test -n "$(AWS_REGION)" || { printf 'AWS_REGION is undefined\n' >&2; exit 1; }
 	@test -n "$(COMPONENT)" || { printf 'COMPONENT is undefined\n' >&2; exit 1; }
-	@aws sts get-caller-identity --query Account --output text --region "$(AWS_REGION)" >/dev/null || { printf 'AWS credentials are invalid or unavailable\n' >&2; exit 1; }
+	@current_account="$$(aws sts get-caller-identity --query Account --output text --region "$(AWS_REGION)")"; \
+	test "$$current_account" = "$(AWS_OWNER_ACCOUNT_ID)" || { printf 'AWS credentials belong to account %s, expected %s\n' "$$current_account" "$(AWS_OWNER_ACCOUNT_ID)" >&2; exit 1; }
 	@printf "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #\n"
 	@printf "# \n"
+	@printf "#  Account:   $(AWS_OWNER_ACCOUNT_ID)\n"
 	@printf "#  Region:    $(AWS_REGION)\n"
 	@printf "#  Component: $(COMPONENT)\n"
 	@printf "# \n"
