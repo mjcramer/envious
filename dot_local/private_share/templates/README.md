@@ -41,6 +41,7 @@ The generated project contains only the selected provider implementation:
 
 ```text
 infrastructure/
+├── README.md
 ├── terraform.mk
 ├── network/
 │   ├── main.tf
@@ -49,6 +50,11 @@ infrastructure/
     ├── main.tf
     └── Makefile
 ```
+
+The generated `README.md` documents the layout, required environment, bootstrap
+order, and teardown for the provider that was selected. It has three prompts to
+fill in: the one-line description, the per-component "Contents" column, and the
+security posture section.
 
 ### Bootstrap components
 

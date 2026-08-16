@@ -1,0 +1,254 @@
+{%- set component_names = components.split() -%}
+{%- set module_names = modules.split() -%}
+{%- set first = component_names[0] -%}
+# {{ project_name }} infrastructure
+
+Terraform for {{ project_name }} on {% if provider == "gcp" %}Google Cloud{% else %}AWS{% endif %}.
+
+> Describe what this infrastructure is for, and delete this line.
+
+## Layout
+
+Each subdirectory is an independently-applied **component** with its own remote
+state. `terraform.mk` is the shared driver; each component's `Makefile` sets
+`COMPONENT` and includes it.
+
+| Component | State {% if provider == "gcp" %}prefix{% else %}key{% endif %} | Contents |
+| --------- | ------------ | -------- |
+{% for component in component_names -%}
+| `{{ component }}/` | {% if provider == "gcp" %}`{{ component }}`{% else %}`${TF_VAR_environment}-{{ component }}/terraform.tfstate`{% endif %} | Describe `{{ component }}` |
+{% endfor %}
+Run every command from inside a component directory, never from the root.
+{% if module_names %}
+Shared modules are referenced as `../modules/{{ project_name }}-<name>/` — this
+template does not generate them, so create them yourself:
+
+{% for module in module_names -%}
+- `../modules/{{ project_name }}-{{ module }}/`
+{% endfor %}
+`terraform.mk` folds those modules' `.tf` files into the plan's prerequisites,
+so editing a module re-plans the components that use it.
+{% endif %}
+## Required environment
+
+Set these in `.mise.toml` under `[env]`. They are consumed by `terraform.mk`,
+which refuses to run if any are missing.
+
+```toml
+[env]
+TF_VAR_environment  = "dev"
+{% if provider == "gcp" -%}
+GCP_PROJECT_ID      = "my-project-id"
+GCP_REGION          = "us-west1"
+GCP_BILLING_ACCOUNT = "000000-000000-000000"
+{%- else -%}
+AWS_REGION          = "us-east-1"
+{%- endif %}
+```
+
+{% if provider == "gcp" -%}
+`GCP_ACCOUNT` defaults to `{{ owner_account }}` and is asserted against the
+active gcloud account, so a stale `gcloud config set project` on another project
+cannot silently redirect a bootstrap command.
+
+Note `GCP_REGION` is a **region** (`us-west1`), not a zone. Any zone belongs in
+a Terraform variable inside the component.
+{%- else -%}
+`AWS_REGION` falls back to `AWS_DEFAULT_REGION`. `AWS_OWNER_ACCOUNT_ID` defaults
+to `{{ owner_account }}` and is asserted against `aws sts get-caller-identity`,
+so credentials for another account cannot silently redirect a command.
+
+These have generated defaults and may be overridden per component:
+`AWS_TERRAFORM_BUCKET`, `AWS_TERRAFORM_KEY`, `AWS_KMS_ALIAS`,
+`AWS_EKS_CLUSTER_NAME`.
+{%- endif %}
+
+### The component name is derived, not the directory name
+
+`COMPONENT` is `${TF_VAR_environment}-<directory>`, so `{{ first }}/` with
+`TF_VAR_environment=dev` is the component `dev-{{ first }}`. That name is what
+feeds the plan filename{% if provider == "gcp" %} and the KMS keyring name{% else %}, the state bucket, the state key, and the KMS alias{% endif %}.
+Every target fails fast if `TF_VAR_environment` is unset.
+
+{% if provider == "gcp" -%}
+The backend `prefix` in each `main.tf` is the **bare** directory name, without
+the environment prefix. Two environments sharing one bucket would collide, so
+give each environment its own project and bucket.
+
+### Naming rules that bite
+
+- **Project IDs are globally unique across all of GCP.** A plain name is often
+  already taken, so `GCP_PROJECT_ID` may need a prefix even though the display
+  name does not.
+- **GCS bucket names are globally unique too.** The state bucket is
+  `{{ project_name }}-terraform`, derived from the copier `project_name` — *not*
+  from `GCP_PROJECT_ID`. If `{{ project_name }}` is not globally distinctive,
+  bucket creation will fail against someone else's bucket.
+- That bucket name is written in two places: `terraform_state_bucket` in
+  `terraform.mk` and the `backend "gcs"` block in each component's `main.tf`.
+  Changing it means editing both.
+{%- else -%}
+### Each component gets its own bucket
+
+`AWS_TERRAFORM_BUCKET` defaults to `$(COMPONENT)-terraform-state`, so every
+component and every environment has a separate state bucket and KMS key. S3
+bucket names are globally unique across all of AWS, so a generic component name
+may collide with a stranger's bucket — override `AWS_TERRAFORM_BUCKET` if so.
+
+Because the backend is configured entirely from the Makefile via
+`-backend-config`, the `backend "s3" {}` block in `main.tf` stays empty. Do not
+hardcode settings there.
+{%- endif %}
+
+## Bootstrapping
+
+The remote state backend cannot itself be managed by the Terraform that stores
+its state there, so the {% if provider == "gcp" %}project, KMS key, and state bucket{% else %}KMS key and state bucket{% endif %} are created
+imperatively first. These targets are **idempotent** — each checks for the
+resource before creating it — so re-running them is safe.
+
+{% if provider == "gcp" -%}
+Run the bootstrap from **one component only** (`{{ first }}/` below). `make
+encryption` creates a keyring named `${COMPONENT}-keys`, and `make storage` sets
+that keyring's key as the shared bucket's default encryption key. Running the
+pair from a second component would repoint the one bucket at a second keyring.
+
+```bash
+# 0. Authenticate. The second command provides the credentials Terraform itself
+#    uses (Application Default Credentials); the first is for the gcloud CLI.
+gcloud auth login
+gcloud auth application-default login
+
+cd {{ first }}
+
+# 1. Verify tools, variables, and that gcloud is authenticated as GCP_ACCOUNT.
+#    Prints the resolved billing account / project / region / component.
+make check
+
+# 2. Create the project, link billing, enable the Cloud KMS and Cloud Storage
+#    APIs. Requires roles/billing.user on the billing account.
+make project
+
+# 3. Create the KMS keyring and the key used to encrypt state. `storage` does
+#    not depend on this, so it must be run first and by hand.
+make encryption
+
+# 4. Create the state bucket, enable uniform bucket-level access, set the key
+#    as its default encryption key, grant the GCS service agent permission to
+#    use that key, and grant yourself objectViewer on the bucket.
+make storage
+
+# 5. Initialize Terraform against the now-existing backend.
+make init
+```
+
+Writing state needs more than the `objectViewer` grant that `make storage`
+applies. Grant yourself `roles/storage.objectAdmin` on the bucket if applies
+fail to persist state.
+
+Once the first component is bootstrapped, every other component needs only
+`make init` — the project, key, and bucket already exist.
+{%- else -%}
+Each component has its **own** bucket and key, so the bootstrap runs once per
+component, not once per project.
+
+```bash
+# 0. Authenticate however this account expects (SSO, profile, or static keys).
+aws sso login   # or: export AWS_PROFILE=...
+
+cd {{ first }}
+
+# 1. Verify tools, variables, and that the active credentials belong to
+#    AWS_OWNER_ACCOUNT_ID. Prints the resolved account / region / component.
+make check
+
+# 2. Print the caller identity. On AWS this only reports — accounts are not
+#    created by Terraform.
+make project
+
+# 3. Create the KMS key and its alias. `storage` already depends on this, so
+#    this step is optional when running `storage` next.
+make encryption
+
+# 4. Create the state bucket, block public access, enable versioning, and set
+#    the KMS key as its default encryption.
+make storage
+
+# 5. Initialize Terraform against the now-existing backend.
+make init
+```
+{%- endif %}
+
+## Per-component workflow
+
+```bash
+make plan      # writes {{ project_name }}-${COMPONENT}.plan
+make apply     # applies that plan, then deletes it
+make output    # terraform output -json
+```
+
+`make apply` deliberately applies a **saved plan** rather than re-planning, so
+what you reviewed is exactly what is applied. `make plan` regenerates the plan
+whenever any `.tf` file is newer than it.
+
+### Other targets
+
+| Target | Effect |
+| ------ | ------ |
+| `help` | List available targets; this is the default goal |
+| `format` | `terraform fmt` across the component and its modules |
+| `unplan` | Preview a destroy without saving a plan |
+| `clean` | Delete the saved plan |
+| `cleaner` | Delete the saved plan and `.terraform/`; requires a re-`init` |
+| `init` | Runs `cleaner` first, so it always re-initializes from scratch |
+| `reinit` | Re-init with `-migrate-state`, keeping the existing backend |
+| `destroy` | `terraform destroy -auto-approve` — no confirmation prompt |
+| `credentials` | Fetch {% if provider == "gcp" %}GKE{% else %}EKS{% endif %} cluster credentials for components that provision one |
+| `print-%` | Print a resolved variable, e.g. `make print-COMPONENT` |
+
+## Teardown
+
+Destroy components in reverse dependency order, then remove the bootstrap
+resources by hand.
+
+{% if provider == "gcp" -%}
+Deleting the project takes the bucket and keyring with it:
+
+```bash
+gcloud projects delete "${GCP_PROJECT_ID}"
+```
+
+Project deletion is a 30-day soft delete, and the project ID is **not** released
+for reuse afterward.
+{%- else -%}
+`make storage` enables versioning, so `aws s3 rm --recursive` is not enough —
+it leaves noncurrent versions and delete markers behind, and the bucket delete
+then fails with `BucketNotEmpty`. Every version has to go first:
+
+```bash
+cd {{ first }}
+make destroy
+
+# Delete every object version and delete marker, then the bucket itself.
+# Versions and DeleteMarkers are listed separately: --query is JMESPath, which
+# has no operator for concatenating the two lists.
+for kind in Versions DeleteMarkers; do
+  aws s3api list-object-versions --bucket "${AWS_TERRAFORM_BUCKET}" --region "${AWS_REGION}" \
+    --query "{Objects: ${kind}[].{Key:Key,VersionId:VersionId}}" --output json > /tmp/objects.json
+  grep -q '"Key"' /tmp/objects.json || continue   # nothing of this kind left
+  aws s3api delete-objects --bucket "${AWS_TERRAFORM_BUCKET}" --region "${AWS_REGION}" \
+    --delete file:///tmp/objects.json
+done
+
+aws s3api delete-bucket --bucket "${AWS_TERRAFORM_BUCKET}" --region "${AWS_REGION}"
+```
+
+`delete-objects` takes at most 1000 keys per call, so repeat the loop until the
+listings come back empty. Scheduled KMS key deletion has a 7–30 day waiting
+period, and the alias is freed only when the key is actually deleted.
+{%- endif %}
+
+## Security posture
+
+> Record the constraints this infrastructure must satisfy, and the ones a
+> reviewer should check first. Delete this section if it lives elsewhere.
