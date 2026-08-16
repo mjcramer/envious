@@ -119,6 +119,60 @@ fmt_reset() {
   fi
 }
 
+# ------------------------------------------------------------ line layout ---
+# Each line is built as a left group and a right group. The right group is
+# pushed toward the right edge when the terminal width is known, so the line
+# spans the window instead of bunching against the left margin.
+
+shopt -s extglob
+
+# Visible width of a string: ANSI colour sequences contribute nothing, and the
+# two emoji we use occupy two cells each while counting as one character.
+vislen() {
+  local plain=${1//$'\e'\[*([0-9;])m/} stripped wide=0
+  stripped=${plain//⚡/}; (( wide += ${#plain} - ${#stripped} ))
+  local rest=$stripped
+  stripped=${rest//🧠/}; (( wide += ${#rest} - ${#stripped} ))
+  printf '%d' $(( ${#plain} + wide ))
+}
+
+# Terminal width, or 0 when it cannot be determined. The status line runs as a
+# subprocess, so $COLUMNS is usually absent and the controlling terminal is the
+# only reliable source.
+term_cols() {
+  local w=${COLUMNS:-}
+  if [[ ! "$w" =~ ^[0-9]+$ ]] || (( w == 0 )); then
+    # Braces matter: redirecting stdin from a missing /dev/tty is reported by
+    # the shell itself, so the whole group needs its stderr silenced.
+    w=$({ stty size </dev/tty; } 2>/dev/null | cut -d' ' -f2)
+  fi
+  if [[ ! "$w" =~ ^[0-9]+$ ]] || (( w == 0 )); then
+    w=$(tput cols 2>/dev/null)
+  fi
+  [[ "$w" =~ ^[0-9]+$ ]] || w=0
+  printf '%d' "$w"
+}
+
+COLS=$(term_cols)
+
+# Column the right group starts at when the width is unknown. Keeps the layout
+# spread out without risking a wrap on an 80-column terminal.
+FALLBACK_COL=52
+
+render() {
+  local left=$1 right=$2 lw rw gap
+  if [[ -z "$right" ]]; then printf '%s' "$left"; return; fi
+  lw=$(vislen "$left")
+  if (( COLS > 0 )); then
+    rw=$(vislen "$right")
+    gap=$(( COLS - 1 - lw - rw ))
+  else
+    gap=$(( FALLBACK_COL - lw ))
+  fi
+  (( gap < 3 )) && gap=3
+  printf '%s%*s%s' "$left" "$gap" '' "$right"
+}
+
 # ----------------------------------------------------------------- line 1 ---
 line1=''
 
@@ -136,10 +190,11 @@ if branch=$(git --no-optional-locks -C "$CUR_DIR" symbolic-ref --quiet --short H
   line1+="${SEP}${PURPLE}⎇ ${branch}${R}${dirty}"
 fi
 
-# Model, plus effort level when the model exposes one.
+# Model, plus effort level when the model exposes one. Right group from here.
+right1=''
 if [[ -n "$MODEL" ]]; then
-  line1+="${SEP}${GOLD}${B}${MODEL}${R}"
-  [[ -n "$EFFORT" ]] && line1+="${D}${GOLD}:${EFFORT}${R}"
+  right1+="${GOLD}${B}${MODEL}${R}"
+  [[ -n "$EFFORT" ]] && right1+="${D}${GOLD}:${EFFORT}${R}"
 fi
 
 # Mode flags.
@@ -150,7 +205,10 @@ flags=''
 [[ -n "$VIM" ]] && flags+=" ${GREEN}${VIM}${R}"
 [[ -n "$AGENT" ]] && flags+=" ${PURPLE}@${AGENT}${R}"
 [[ -n "$PR" ]] && flags+=" ${BLUE}#${PR}${R}"
-[[ -n "$flags" ]] && line1+="${SEP}${flags# }"
+if [[ -n "$flags" ]]; then
+  [[ -n "$right1" ]] && right1+="$SEP"
+  right1+="${flags# }"
+fi
 
 # ----------------------------------------------------------------- line 2 ---
 line2=''
@@ -163,16 +221,18 @@ if (( $(to_int "$CTX_MAX") > 0 )); then
   line2+=" ${D}${GREY}$(fmt_tokens "$(to_int "$CTX_USED")")/$(fmt_tokens "$(to_int "$CTX_MAX")")${R}"
 fi
 
-# Session cost, once it rounds to something worth showing.
+# Session cost, once it rounds to something worth showing. Right group here on.
+right2=''
 if [[ "$COST" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   cost_fmt=$(printf '%.2f' "$COST")
-  [[ "$cost_fmt" != "0.00" ]] && line2+="${SEP}${GREEN}\$${cost_fmt}${R}"
+  [[ "$cost_fmt" != "0.00" ]] && right2+="${GREEN}\$${cost_fmt}${R}"
 fi
 
 # Lines changed this session.
 added=$(to_int "$ADDED"); removed=$(to_int "$REMOVED")
 if (( added > 0 || removed > 0 )); then
-  line2+="${SEP}${GREEN}+${added}${R}${D}/${R}${RED}-${removed}${R}"
+  [[ -n "$right2" ]] && right2+="$SEP"
+  right2+="${GREEN}+${added}${R}${D}/${R}${RED}-${removed}${R}"
 fi
 
 # Subscription rate limits.
@@ -186,6 +246,10 @@ if [[ -n "$RL7" ]]; then
   [[ -n "$limits" ]] && limits+="${D}${GREY} · ${R}"
   limits+="$(pct_color "$p")7d ${p}%$(fmt_reset "$RL7_RESET")${R}"
 fi
-[[ -n "$limits" ]] && line2+="${SEP}${limits}"
+if [[ -n "$limits" ]]; then
+  [[ -n "$right2" ]] && right2+="$SEP"
+  right2+="${limits}"
+fi
 
-printf '%b\n%b\n' "$line1" "$line2"
+# No trailing newline: it would render as an extra blank status line.
+printf '%s\n%s' "$(render "$line1" "$right1")" "$(render "$line2" "$right2")"
