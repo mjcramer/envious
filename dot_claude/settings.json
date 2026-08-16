@@ -90,7 +90,8 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "input=$(cat); echo \"$(echo \"$input\" | jq -r '.cwd')\""
+    "command": "~/.claude/statusline.sh",
+    "padding": 0
   },
   "effortLevel": "high",
   "skipDangerousModePermissionPrompt": true
