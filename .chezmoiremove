@@ -1,0 +1,13 @@
+# Targets to delete from the destination on `chezmoi apply`.
+#
+# Dropping a file from the source only stops chezmoi managing it; the copy
+# already deployed stays put. Anything listed here is actively removed, which
+# is what retires a file across every machine rather than just this one.
+
+# Folded into `hostalias -d` / `hostalias -d --all`.
+.config/fish/functions/unhostalias.fish
+
+# Never autoloadable: fish resolves a function by looking for a file of the
+# same name, so a bundle file defining several helpers is only ever dead
+# weight. Its contents now live in one file per function.
+.config/fish/functions/__hostalias_helpers.fish
