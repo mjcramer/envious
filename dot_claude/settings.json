@@ -73,7 +73,7 @@
       "Bash(ssh:*)",
       "Bash(sudo:*)"
     ],
-    "defaultMode": "default"
+    "defaultMode": "auto"
   },
   "model": "opus",
   "hooks": {
