@@ -25,9 +25,6 @@ brew {{ . | quote }}
 {{ range .packages.homebrew.casks -}}
 cask {{ . | quote }}
 {{ end -}}
-{{ range .packages.homebrew.vscodes -}}
-vscode {{ . | quote }}
-{{ end -}}
 EOF
 )
 
