@@ -1,14 +1,63 @@
-#!/usr/bin/env fish
+#!/usr/bin/env bash
 # fish_plugins hash: {{ include "private_dot_config/fish/fish_plugins" | sha256sum }}
-printf '==> chezmoi: %s\n' (basename (status filename))
 
-set prefix "[install fisher plugins]"
+set -euo pipefail
+echo "==> chezmoi: $(basename "${BASH_SOURCE[0]}")"
+
+export prefix="[install fisher plugins]"
 echo
 
+# This script used to start with `#!/usr/bin/env fish`, which fails on the very
+# first bootstrap: chezmoi runs scripts with the PATH it inherited from the
+# shell that started `chezmoi init --apply`, and on a new machine that PATH
+# predates Homebrew. The package script installs fish moments earlier, but its
+# `brew shellenv` only ever applied to its own process, so `env` searched a
+# Homebrew-less PATH and the run died with:
+#
+#     env: fish: No such file or directory
+#
+# The second run worked only because the user's shell had been restarted by
+# then. So resolve the interpreter by hand rather than trusting PATH.
+find_fish() {
+    local candidate
+    if candidate=$(command -v fish 2>/dev/null); then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+    # Apple Silicon brew, Intel brew, Linuxbrew, then a distro package.
+    for candidate in \
+        /opt/homebrew/bin/fish \
+        /usr/local/bin/fish \
+        /home/linuxbrew/.linuxbrew/bin/fish \
+        /usr/bin/fish; do
+        if [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if ! fish_bin=$(find_fish); then
+    # Warn rather than fail: the plugins are cosmetic, and taking down the whole
+    # bootstrap over them is what this script is being fixed for.
+    echo "$prefix fish not found, skipping fisher setup." >&2
+    echo "$prefix Install fish, then re-run: chezmoi apply" >&2
+    exit 0
+fi
+
+echo "$prefix Using $fish_bin"
+
+# Let the fish process find brew-installed tools regardless of the inherited
+# PATH -- fisher itself shells out to curl and git.
+PATH="$(dirname "$fish_bin"):$PATH"
+export PATH
+
+"$fish_bin" <<'FISH'
 # Install fisher if not already installed
 if not type -q fisher
-	echo "$prefix Installing fisher..."
-	curl -sL https://git.io/fisher | source && fisher install jorgebucaran/fisher
+    echo "$prefix Installing fisher..."
+    curl -sL https://git.io/fisher | source && fisher install jorgebucaran/fisher
 end
 
 echo "$prefix Installing and updating fisher plugins:"
@@ -17,9 +66,10 @@ fisher update
 
 echo "$prefix Configuring tide prompt..."
 tide configure --auto \
-	--style=Rainbow --show_time='24-hour format' --rainbow_prompt_separators=Round \
-	--powerline_prompt_heads=Round --powerline_prompt_tails=Sharp --powerline_prompt_style='Two lines, frame' --powerline_right_prompt_frame=Yes \
+    --style=Rainbow --show_time='24-hour format' --rainbow_prompt_separators=Round \
+    --powerline_prompt_heads=Round --powerline_prompt_tails=Sharp --powerline_prompt_style='Two lines, frame' --powerline_right_prompt_frame=Yes \
     --prompt_connection=Disconnected --prompt_connection_andor_frame_color=Darkest --prompt_colors='True color' --prompt_spacing=Compact \
-	--icons='Many icons' --transient=Yes
+    --icons='Many icons' --transient=Yes
 
-echo "$prefix ✅ Fisher has finished sucessfully!"
+echo "$prefix ✅ Fisher has finished successfully!"
+FISH
