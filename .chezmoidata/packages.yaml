@@ -61,6 +61,10 @@ packages:
       - codex
       - docker-desktop
       - firefox
+      # Nerd Font patched Meslo -- supplies the glyphs the tide prompt draws.
+      # Font casks used to need the homebrew/cask-fonts tap; that was
+      # deprecated in 2024 and fonts now live in homebrew/cask itself.
+      - font-meslo-lg-nerd-font
       - iterm2
       - jetbrains-toolbox
       - ngrok
