@@ -4,7 +4,6 @@ packages:
     taps:
       - derailed/k9s
     brews:
-      - awscli
       - bash
       - bash-completion
       - brew-cask-completion
@@ -44,7 +43,7 @@ packages:
       - pre-commit
       - prometheus
       - protobuf
-      - python@3.13
+      - python
       - shellcheck
       - tree
       - unzip
