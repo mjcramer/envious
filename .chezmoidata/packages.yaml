@@ -68,6 +68,7 @@ packages:
       - iterm2
       - jetbrains-toolbox
       - ngrok
+      - notion
       - sizeup
       - slack
       - spotify
