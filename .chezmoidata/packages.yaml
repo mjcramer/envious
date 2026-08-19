@@ -58,6 +58,7 @@ packages:
       - 1password
       - 1password-cli
       - beyond-compare
+      - claude
       - codex
       - docker-desktop
       - firefox
