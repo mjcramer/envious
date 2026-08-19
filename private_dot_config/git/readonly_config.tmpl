@@ -52,8 +52,13 @@
 	autoSetupRemote = true
 	default = "current"
 
+# pushInsteadOf, not insteadOf: rewriting fetches too breaks the bootstrap.
+# `chezmoi init mjcramer/envious` guesses an https URL and clones it keyless,
+# then applies this file -- after which every fetch against that remote is
+# rewritten to ssh and `chezmoi update` fails on a machine with no key yet.
+# Pushing is the only side that genuinely needs the key.
 [url "ssh://git@github.com/"]
-	insteadOf = "https://github.com/"
+	pushInsteadOf = "https://github.com/"
 
 [user]
 	email = {{ .email | quote }}
