@@ -65,6 +65,7 @@ packages:
       # Font casks used to need the homebrew/cask-fonts tap; that was
       # deprecated in 2024 and fonts now live in homebrew/cask itself.
       - font-meslo-lg-nerd-font
+      - google-drive
       - iterm2
       - jetbrains-toolbox
       - ngrok
