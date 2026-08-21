@@ -46,6 +46,9 @@ packages:
       - python
       - shellcheck
       - tree
+      # nvim-treesitter's main branch shells out to the tree-sitter CLI
+      # to compile parsers; the `tree-sitter` formula is only the library.
+      - tree-sitter-cli
       - unzip
       - watch
       - wget

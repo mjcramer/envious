@@ -112,14 +112,27 @@ require('lazy').setup({
   },
 
   -- Syntax highlighting
+  -- NOTE: the `main` branch is the rewrite; it has no `nvim-treesitter.configs`.
+  -- Parsers are installed explicitly and highlighting is started per filetype.
   {
     'nvim-treesitter/nvim-treesitter',
+    branch = 'main',
+    lazy = false,
     build = ':TSUpdate',
     config = function()
-      require('nvim-treesitter.configs').setup({
-        ensure_installed = { 'lua', 'vim', 'python', 'javascript', 'typescript', 'bash', 'fish' },
-        highlight = { enable = true },
-        indent = { enable = true },
+      require('nvim-treesitter').install({
+        'lua', 'vim', 'vimdoc', 'python', 'javascript', 'typescript', 'bash', 'fish',
+      })
+
+      vim.api.nvim_create_autocmd('FileType', {
+        pattern = {
+          'lua', 'vim', 'help', 'python', 'javascript', 'typescript', 'sh', 'bash', 'fish',
+        },
+        callback = function()
+          -- No parser installed yet on first launch; don't blow up the buffer.
+          if not pcall(vim.treesitter.start) then return end
+          vim.bo.indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+        end,
       })
     end,
   },
@@ -137,7 +150,7 @@ require('lazy').setup({
   {
     'nvim-lualine/lualine.nvim',
     dependencies = { 'nvim-tree/nvim-web-devicons' },
-    opts = { options = { theme = 'catppuccin' } },
+    opts = { options = { theme = 'catppuccin-mocha' } },
   },
 })
 
