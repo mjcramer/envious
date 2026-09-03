@@ -1,3 +1,7 @@
+# The following lines were added by Docker Desktop to add commands to your PATH.
+export PATH="$PATH:/Users/mjcramer/.docker/bin"
+# End of Docker Desktop section.
+
 # Only execute this file once per shell
 set -q __fish_config_sourced; and exit
 set -g __fish_config_sourced 1
