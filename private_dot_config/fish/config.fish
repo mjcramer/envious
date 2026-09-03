@@ -41,6 +41,7 @@ if status is-interactive
     # Path Additions
     # ------------------------------------------------------------------------------------------------------------------
     fish_add_path ~/.local/bin
+    fish_add_path ~/.claude/bin      # crew: agent workspace manager
     if test -d /Applications/IntelliJ\ IDEA.app/Contents/MacOS
         fish_add_path /Applications/IntelliJ\ IDEA.app/Contents/MacOS
     end

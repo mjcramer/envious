@@ -1,0 +1,489 @@
+#!/usr/bin/env python3
+"""
+crew — persistent per-agent git workspaces for Claude Code subagents.
+
+Each agent that has `isolation: worktree` in its frontmatter gets a persistent git worktree
+named  <repo>.<agent>  next to the main checkout (e.g. ~/src/platform.infra-engineer), on its
+own branch  agent/<agent>/<yyyymmdd-hhmm>  cut from the branch you are working on. Every
+subagent invocation is an "iteration": whatever the agent leaves uncommitted is committed when
+it stops, and the boundary is recorded so you can diff iteration N against N-1.
+
+Some agents (see IN_CHECKOUT_AGENTS) deliberately have no worktree and work directly in
+the human's checkout. They get no branch, but their finish is still committed and recorded
+as an iteration, so `crew log`/`crew diff` read the same way for them.
+
+Hook entry points (wired in ~/.claude/settings.json):
+  crew hook-create   WorktreeCreate  -> creates/reuses the workspace, prints its path
+  crew hook-remove   WorktreeRemove  -> keeps the workspace (prunes an empty branch)
+  crew hook-stop     SubagentStop    -> commits leftovers, records the iteration
+
+CLI (run from anywhere inside the repo or a workspace):
+  crew list                      workspaces, branches, iterations, ahead/behind
+  crew log  <agent>              iteration log for the agent's current branch
+  crew diff <agent> [N]          diff of iteration N (default: latest) vs the one before
+  crew diff <agent> N M          diff between iteration N and M
+  crew diff <agent> base         everything the branch changed vs its base
+  crew task <agent> [slug]       next invocation starts a fresh branch (optionally named)
+  crew merge-cmd <agent>         print the merge / PR commands for the agent's branch
+  crew path <agent>              print the workspace path
+
+Override the workspace parent directory with AGENT_WS_ROOT (default: sibling of the repo,
+falling back to ~/.claude/workspaces if the sibling location is not writable).
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+BRANCH_PREFIX = "agent/"
+NEW_TASK_DIR = Path.home() / ".claude" / "workspaces" / ".new-task"
+
+# Agents that deliberately work in the human's checkout instead of their own worktree.
+# They have no branch; their finish is committed in place so there is a readable boundary.
+IN_CHECKOUT_AGENTS = {"spike-engineer"}
+
+
+# ----------------------------------------------------------------------------- helpers
+def log(msg):
+    print(f"[crew] {msg}", file=sys.stderr)
+
+
+def git(*args, cwd=None, check=True, capture=True):
+    r = subprocess.run(["git", *args], cwd=cwd, text=True,
+                       capture_output=capture, check=False)
+    if check and r.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: {(r.stderr or '').strip()}")
+    return (r.stdout or "").strip()
+
+
+def main_checkout(cwd):
+    """Path of the main (non-linked) checkout for the repo containing cwd."""
+    common = git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd)
+    return Path(common).parent.resolve()
+
+
+def repo_name(main):
+    return main.name
+
+
+def ws_root(main):
+    override = os.environ.get("AGENT_WS_ROOT")
+    if override:
+        return Path(override).expanduser().resolve()
+    parent = main.parent
+    if os.access(parent, os.W_OK):
+        return parent
+    fallback = Path.home() / ".claude" / "workspaces"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+def ws_path(main, agent):
+    return ws_root(main) / f"{repo_name(main)}.{agent}"
+
+
+def shortref(r):
+    """Abbreviate a sha for display without mangling a branch name or a trailing ^."""
+    if not r:
+        return "?"
+    core, caret = (r[:-1], "^") if r.endswith("^") else (r, "")
+    return (core[:12] if re.fullmatch(r"[0-9a-f]{7,40}", core) else core) + caret
+
+
+def safe_slug(s):
+    s = re.sub(r"[^a-zA-Z0-9._-]+", "-", s).strip("-.")
+    return s[:48] or "task"
+
+
+def current_branch(path):
+    return git("rev-parse", "--abbrev-ref", "HEAD", cwd=path)
+
+
+def is_dirty(path):
+    return bool(git("status", "--porcelain", "--untracked-files=all", cwd=path))
+
+
+def branch_base(path, branch):
+    return git("config", "--get", f"branch.{branch}.agent-base", cwd=path, check=False)
+
+
+def set_branch_base(path, branch, base):
+    git("config", f"branch.{branch}.agent-base", base, cwd=path)
+
+
+def is_merged(path, branch, base):
+    if not base or not git("rev-parse", "--verify", "-q", base, cwd=path, check=False):
+        return False
+    return subprocess.run(["git", "merge-base", "--is-ancestor", branch, base],
+                          cwd=path, capture_output=True).returncode == 0
+
+
+def resolve_base(main, base_ref):
+    """Turn the hook's base_ref into (branch_name, sha) in the main checkout."""
+    head_branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=main)
+    if base_ref in ("", None, "head", "HEAD"):
+        return head_branch, git("rev-parse", "HEAD", cwd=main)
+    if base_ref == "fresh":
+        origin = git("symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD", cwd=main, check=False)
+        if origin and git("rev-parse", "--verify", "-q", origin, cwd=main, check=False):
+            return origin, git("rev-parse", origin, cwd=main)
+        return head_branch, git("rev-parse", "HEAD", cwd=main)
+    sha = git("rev-parse", "--verify", "-q", base_ref, cwd=main, check=False)
+    if sha:
+        return base_ref, sha
+    return head_branch, git("rev-parse", "HEAD", cwd=main)
+
+
+def iter_log_path(path, branch):
+    common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=path))
+    d = common / "agent-iterations"
+    d.mkdir(exist_ok=True)
+    return d / (branch.replace("/", "__") + ".log")
+
+
+def read_iterations(path, branch):
+    p = iter_log_path(path, branch)
+    if not p.exists():
+        return []
+    out = []
+    for line in p.read_text().splitlines():
+        parts = line.split("\t", 3)
+        if len(parts) == 4:
+            out.append({"n": int(parts[0]), "sha": parts[1], "at": parts[2], "summary": parts[3]})
+    return out
+
+
+def record_iteration(path, branch, sha, summary):
+    its = read_iterations(path, branch)
+    n = (its[-1]["n"] + 1) if its else 1
+    with iter_log_path(path, branch).open("a") as f:
+        f.write(f"{n}\t{sha}\t{datetime.now().strftime('%Y-%m-%d %H:%M')}\t{summary}\n")
+    return n
+
+
+def copy_worktreeinclude(main, dest):
+    inc = main / ".worktreeinclude"
+    if not inc.exists():
+        return
+    patterns = [l.strip() for l in inc.read_text().splitlines() if l.strip() and not l.startswith("#")]
+    if not patterns:
+        return
+    ignored = git("ls-files", "--others", "--ignored", "--exclude-standard", cwd=main).splitlines()
+    import fnmatch, shutil
+    for rel in ignored:
+        if any(fnmatch.fnmatch(rel, p) or fnmatch.fnmatch(Path(rel).name, p) or rel.startswith(p.rstrip("/") + "/")
+               for p in patterns):
+            src, dst = main / rel, dest / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            log(f"copied {rel} (from .worktreeinclude)")
+
+
+def checkout_key(branch, agent):
+    """Iteration-log key for an in-checkout agent: its history is per branch AND per agent."""
+    return f"{branch}@{agent}"
+
+
+def summarize(payload):
+    lines = (payload.get("last_assistant_message") or "").strip().splitlines()
+    return re.sub(r"\s+", " ", lines[0])[:72] if lines else "end of iteration"
+
+
+def agent_from_payload(p):
+    return p.get("agent_type") or p.get("name") or "worktree"
+
+
+def find_workspace(cwd, agent):
+    """Locate the workspace for `agent` given any cwd inside the repo or a workspace."""
+    main = main_checkout(cwd)
+    p = ws_path(main, agent)
+    if p.exists():
+        return main, p
+    # maybe we are inside it already under another root
+    top = Path(git("rev-parse", "--show-toplevel", cwd=cwd))
+    if top.name == f"{repo_name(main)}.{agent}":
+        return main, top
+    raise SystemExit(f"no workspace for '{agent}' (expected {p})")
+
+
+def resolve_agent(cwd, agent):
+    """(path, iteration key, base, in_checkout) for any agent, isolated or in-checkout."""
+    if agent in IN_CHECKOUT_AGENTS:
+        main = main_checkout(cwd)
+        return main, checkout_key(current_branch(main), agent), None, True
+    main, path = find_workspace(cwd, agent)
+    br = current_branch(path)
+    return path, br, branch_base(path, br), False
+
+
+# ----------------------------------------------------------------------------- hooks
+def hook_create(payload):
+    cwd = payload.get("cwd") or os.getcwd()
+    main = main_checkout(cwd)
+    agent = safe_slug(agent_from_payload(payload))
+    path = ws_path(main, agent)
+    base_branch, base_sha = resolve_base(main, payload.get("base_ref"))
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+
+    # a pending `crew task <agent> [slug]` request?
+    req = NEW_TASK_DIR / f"{repo_name(main)}.{agent}"
+    force_new, slug = False, None
+    if req.exists():
+        force_new = True
+        slug = req.read_text().strip() or None
+        req.unlink()
+
+    def new_branch_name():
+        base_name = f"{BRANCH_PREFIX}{agent}/{slug or stamp}"
+        name, i = base_name, 2
+        while git("rev-parse", "--verify", "-q", f"refs/heads/{name}", cwd=main, check=False):
+            name, i = f"{base_name}-{i}", i + 1
+        return name
+
+    if not path.exists():
+        branch = new_branch_name()
+        git("worktree", "add", str(path), "-b", branch, base_sha, cwd=main)
+        set_branch_base(path, branch, base_branch)
+        copy_worktreeinclude(main, path)
+        log(f"created {path} on {branch} (base {base_branch})")
+    else:
+        cur = current_branch(path)
+        if is_dirty(path):
+            git("add", "-A", cwd=path)
+            git("commit", "-q", "-m", f"[{agent}] wip: uncommitted changes found at session start", cwd=path)
+            record_iteration(path, cur, git("rev-parse", "HEAD", cwd=path), "wip (auto-committed at start)")
+            log(f"auto-committed leftovers on {cur}")
+        base = branch_base(path, cur)
+        if force_new or not cur.startswith(BRANCH_PREFIX) or is_merged(path, cur, base):
+            branch = new_branch_name()
+            git("checkout", "-q", "-b", branch, base_sha, cwd=path)
+            set_branch_base(path, branch, base_branch)
+            log(f"reusing {path}: new branch {branch} (base {base_branch})")
+        else:
+            log(f"reusing {path}: continuing {cur} (iteration {len(read_iterations(path, cur)) + 1})")
+        copy_worktreeinclude(main, path)
+
+    print(path)  # stdout = the worktree path Claude Code will use as cwd
+    return 0
+
+
+def stop_in_checkout(cwd, agent, summary):
+    """An agent that works in the human's checkout: commit what it left so there is a
+    boundary readable with plain git log/diff, and record it as an iteration.
+
+    This sweeps up everything uncommitted in the tree, the human's own in-flight edits
+    included — the agent's prompt tells it to say so up front if the tree starts dirty."""
+    try:
+        top = Path(git("rev-parse", "--show-toplevel", cwd=cwd))
+    except RuntimeError:
+        return 0  # not in a repo; nothing to commit
+    if not is_dirty(top):
+        return 0  # left nothing behind: don't attribute the human's commits to the agent
+    key = checkout_key(current_branch(top), agent)
+    its = read_iterations(top, key)
+    n = (its[-1]["n"] + 1) if its else 1
+    git("add", "-A", cwd=top)
+    git("commit", "-q", "-m", f"[{agent} #{n}] {summary}", cwd=top)
+    head = git("rev-parse", "HEAD", cwd=top)
+    record_iteration(top, key, head, summary)
+    log(f"iteration {n} committed in your checkout on {current_branch(top)} ({head[:8]})")
+    return 0
+
+
+def hook_stop(payload):
+    cwd = payload.get("cwd") or os.getcwd()
+    agent = safe_slug(agent_from_payload(payload))
+    summary = summarize(payload)
+    if agent in IN_CHECKOUT_AGENTS:
+        return stop_in_checkout(cwd, agent, summary)
+    try:
+        main, path = find_workspace(cwd, agent)
+    except SystemExit:
+        return 0  # agent did not run in a workspace; nothing to do
+    branch = current_branch(path)
+    if not branch.startswith(BRANCH_PREFIX):
+        return 0
+    its = read_iterations(path, branch)
+    n = (its[-1]["n"] + 1) if its else 1
+    if is_dirty(path):
+        git("add", "-A", cwd=path)
+        git("commit", "-q", "-m", f"[{agent} #{n}] {summary}", cwd=path)
+    head = git("rev-parse", "HEAD", cwd=path)
+    if its and its[-1]["sha"] == head:
+        return 0  # nothing changed this iteration
+    record_iteration(path, branch, head, summary)
+    log(f"iteration {n} recorded on {branch} ({head[:8]})")
+    return 0
+
+
+def hook_remove(payload):
+    # Never remove the workspace. Only drop a branch that has no work on it.
+    cwd = payload.get("cwd") or os.getcwd()
+    agent = safe_slug(agent_from_payload(payload))
+    if agent in IN_CHECKOUT_AGENTS:
+        return 0  # no worktree of its own; never touch the human's checkout
+    try:
+        main, path = find_workspace(cwd, agent)
+    except SystemExit:
+        return 0
+    branch = current_branch(path)
+    base = branch_base(path, branch)
+    if branch.startswith(BRANCH_PREFIX) and base and not is_dirty(path):
+        base_sha = git("rev-parse", "--verify", "-q", base, cwd=path, check=False)
+        if base_sha and git("rev-parse", "HEAD", cwd=path) == base_sha:
+            git("checkout", "-q", "--detach", cwd=path)
+            git("branch", "-D", branch, cwd=path)
+            log(f"pruned empty branch {branch}; workspace kept at {path}")
+    return 0
+
+
+# ----------------------------------------------------------------------------- CLI
+def cmd_list(_):
+    main = main_checkout(os.getcwd())
+    prefix = f"{repo_name(main)}."
+    rows = []
+    for line in git("worktree", "list", "--porcelain", cwd=main).split("\n\n"):
+        wt = dict(l.split(" ", 1) for l in line.splitlines() if " " in l)
+        p = Path(wt.get("worktree", ""))
+        if not p.name.startswith(prefix):
+            continue
+        agent = p.name[len(prefix):]
+        br = wt.get("branch", "").replace("refs/heads/", "") or "(detached)"
+        base = branch_base(p, br) if br != "(detached)" else ""
+        ahead = git("rev-list", "--count", f"{base}..{br}", cwd=p, check=False) if base else "?"
+        behind = git("rev-list", "--count", f"{br}..{base}", cwd=p, check=False) if base else "?"
+        its = read_iterations(p, br) if br != "(detached)" else []
+        dirty = "*" if is_dirty(p) else ""
+        rows.append((agent, br + dirty, base, f"+{ahead}/-{behind}", str(len(its)), str(p)))
+    # agents that work in the human's checkout have no worktree, but do have a history
+    br_main = current_branch(main)
+    for agent in sorted(IN_CHECKOUT_AGENTS):
+        its = read_iterations(main, checkout_key(br_main, agent))
+        if its:
+            rows.append((agent, br_main, "-", "-", str(len(its)), f"{main} (your checkout)"))
+    if not rows:
+        print("no agent workspaces yet")
+        return 0
+    hdr = ("AGENT", "BRANCH", "BASE", "AHEAD/BEHIND", "ITER", "PATH")
+    widths = [max(len(r[i]) for r in [hdr, *rows]) for i in range(6)]
+    for r in [hdr, *rows]:
+        print("  ".join(c.ljust(widths[i]) for i, c in enumerate(r)))
+    print("\n* = uncommitted changes in the workspace")
+    return 0
+
+
+def cmd_log(args):
+    if not args:
+        raise SystemExit("usage: crew log <agent>")
+    path, key, base, in_checkout = resolve_agent(os.getcwd(), args[0])
+    if in_checkout:
+        print(f"{args[0]}  (no worktree — works in your checkout {path}, on {current_branch(path)})")
+    else:
+        print(f"{key}  (base: {base or '?'}, workspace: {path})")
+    its = read_iterations(path, key)
+    if not its:
+        print("  no iterations recorded yet")
+    for it in its:
+        print(f"  #{it['n']:<3} {it['sha'][:8]}  {it['at']}  {it['summary']}")
+    if base:
+        print("\ncommits vs base:")
+        print(git("log", "--oneline", f"{base}..{key}", cwd=path, check=False))
+    return 0
+
+
+def cmd_diff(args):
+    if not args:
+        raise SystemExit("usage: crew diff <agent> [N | N M | base]")
+    path, key, base, in_checkout = resolve_agent(os.getcwd(), args[0])
+    its = read_iterations(path, key)
+    rest = args[1:]
+    if rest and rest[0] == "base":
+        if not base:
+            raise SystemExit(f"{args[0]} works in your checkout and has no branch base; "
+                             f"use 'crew diff {args[0]} [N]' or plain git diff")
+        a, b = base, key
+    elif len(rest) == 2:
+        a, b = its[int(rest[0]) - 1]["sha"], its[int(rest[1]) - 1]["sha"]
+    else:
+        n = int(rest[0]) if rest else (its[-1]["n"] if its else 0)
+        if n == 0:
+            raise SystemExit("no iterations recorded yet")
+        b = its[n - 1]["sha"]
+        # first iteration: compare against the branch base, or the commit it landed on
+        a = its[n - 2]["sha"] if n >= 2 else (base or f"{b}^")
+    print(f"# {shortref(a)} -> {shortref(b)}", file=sys.stderr)
+    subprocess.run(["git", "diff", "--stat", a, b], cwd=path)
+    subprocess.run(["git", "diff", a, b], cwd=path)
+    return 0
+
+
+def cmd_task(args):
+    if not args:
+        raise SystemExit("usage: crew task <agent> [slug]")
+    if args[0] in IN_CHECKOUT_AGENTS:
+        raise SystemExit(f"{args[0]} works in your checkout and has no branch; nothing to reset")
+    main = main_checkout(os.getcwd())
+    NEW_TASK_DIR.mkdir(parents=True, exist_ok=True)
+    slug = safe_slug(args[1]) if len(args) > 1 else ""
+    (NEW_TASK_DIR / f"{repo_name(main)}.{args[0]}").write_text(slug)
+    print(f"next run of {args[0]} in {repo_name(main)} starts a fresh branch"
+          + (f" agent/{args[0]}/{slug}" if slug else ""))
+    return 0
+
+
+def cmd_merge_cmd(args):
+    if not args:
+        raise SystemExit("usage: crew merge-cmd <agent>")
+    path, br, base, in_checkout = resolve_agent(os.getcwd(), args[0])
+    if in_checkout:
+        print(f"# {args[0]} commits straight into your checkout — nothing to merge.\n"
+              f"git log --oneline --grep '^\\[{args[0]} #'\n"
+              f"crew diff {args[0]}")
+        return 0
+    base = base or "<your-branch>"
+    print(f"# review\n"
+          f"git log --oneline {base}..{br}\n"
+          f"git diff {base}...{br}\n\n"
+          f"# merge into your working branch\n"
+          f"git checkout {base} && git merge --no-ff {br}\n\n"
+          f"# or open a PR\n"
+          f"git push -u origin {br} && gh pr create --head {br} --base {base} --fill")
+    return 0
+
+
+def cmd_path(args):
+    if not args:
+        raise SystemExit("usage: crew path <agent>")
+    path, _, _, _ = resolve_agent(os.getcwd(), args[0])
+    print(path)
+    return 0
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        return 1
+    cmd, args = sys.argv[1], sys.argv[2:]
+    if cmd.startswith("hook-"):
+        try:
+            payload = json.load(sys.stdin)
+        except Exception:
+            payload = {}
+        try:
+            return {"hook-create": hook_create, "hook-stop": hook_stop, "hook-remove": hook_remove}[cmd](payload)
+        except Exception as e:  # never let a hook crash silently
+            log(f"error: {e}")
+            return 1 if cmd == "hook-create" else 0
+    table = {"list": cmd_list, "log": cmd_log, "diff": cmd_diff, "task": cmd_task,
+             "merge-cmd": cmd_merge_cmd, "path": cmd_path}
+    if cmd not in table:
+        print(__doc__)
+        return 1
+    return table[cmd](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

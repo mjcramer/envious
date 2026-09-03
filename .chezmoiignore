@@ -2,3 +2,11 @@ README.md
 CLAUDE.md
 Makefile
 
+
+# cramer-bridge is a delivery bundle staged here, not a managed target. Its
+# chezmoi/ subdir is meant to be copied into the source root (see its README).
+# Ignored so its run_onchange_after_ script isn't parsed in place, where its
+# `include "dot_local/lib/cramer-bridge/server.py"` cannot resolve.
+# Remove these two lines once the bundle is integrated or moved out of the tree.
+cramer-bridge
+cramer-bridge/**

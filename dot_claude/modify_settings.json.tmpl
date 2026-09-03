@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+# chezmoi modify_ script for ~/.claude/settings.json  (also a chezmoi template: {{ .chezmoi.homeDir }}
+# is substituted before it runs, so paths below are per-machine).
+#
+# chezmoi runs this on every `chezmoi apply`, piping the CURRENT ~/.claude/settings.json on stdin;
+# whatever is printed to stdout becomes the new file. Semantics:
+#   * scalar / object keys in SETTINGS (model, statusLine, defaultMode, worktree, ...) are enforced —
+#     the value here always wins over what is on disk
+#   * permission lists are unioned (your rules here + anything Claude Code saved on disk), deduped,
+#     and any rule present in `deny` is removed from `allow`/`ask`
+#   * hooks are added per event unless a hook with the same command is already wired, so hooks
+#     Claude Code or you add on disk are kept and re-applies never stack duplicates
+#   * anything on disk that this file doesn't mention is left alone
+# The merge is idempotent, so `chezmoi diff` is empty after apply. Edit SETTINGS to change things.
+import json
+import sys
+
+HOME = "{{ .chezmoi.homeDir }}"
+
+SETTINGS = {
+    # ---- general -------------------------------------------------------------------------
+    "model": "opus",
+    "effortLevel": "high",
+    "skipDangerousModePermissionPrompt": True,
+    "statusLine": {"type": "command", "command": "~/.claude/statusline.sh", "padding": 0},
+    "worktree": {"baseRef": "head"},          # agent branches cut from your current HEAD
+
+    # ---- permissions ---------------------------------------------------------------------
+    # Precedence in Claude Code is deny > ask > allow, so the broad allows below (git:*, terraform:*,
+    # kubectl:*) are still narrowed by the ask/deny rules, and the PreToolUse guard runs regardless.
+    "permissions": {
+        "defaultMode": "auto",
+        "allow": [
+            # everyday tooling
+            "Bash(awk:*)", "Bash(az:*)", "Bash(cargo:*)", "Bash(cat:*)", "Bash(cd:*)", "Bash(cp:*)",
+            "Bash(curl:*)", "Bash(databricks:*)", "Bash(docker:*)", "Bash(echo:*)", "Bash(find:*)",
+            "Bash(gh:*)", "Bash(git:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(jar:*)", "Bash(javap:*)",
+            "Bash(kill:*)", "Bash(kubectl:*)", "Bash(ls:*)", "Bash(make:*)", "Bash(mkdir:*)", "Bash(mv:*)",
+            "Bash(mvn:*)", "Bash(nc:*)", "Bash(node:*)", "Bash(npm:*)", "Bash(pip:*)", "Bash(pkill:*)",
+            "Bash(pwd)", "Bash(python:*)", "Bash(python3:*)", "Bash(rm:*)", "Bash(rmdir:*)", "Bash(sort:*)",
+            "Bash(tail:*)", "Bash(terraform:*)", "Bash(touch:*)", "Bash(tree:*)", "Bash(unzip:*)",
+            "Bash(wget:*)", "Bash(xargs:*)",
+            "Edit(**)", "Read(**)", "Read(/tmp)",
+            f"Edit({HOME}/.claude/**)",
+            "Skill(update-config)",
+            "mcp__notion__notion-create-pages", "mcp__notion__notion-fetch", "mcp__notion__notion-search",
+            "mcp__notion__notion-update-page",
+            "mcp__claude_ai_Notion__notion-fetch", "mcp__claude_ai_Notion__notion-search",
+            "mcp__claude_ai_Notion__notion-update-page",
+            # SRE team: read-only infra inspection and scanners
+            "Bash(tofu plan *)", "Bash(tofu validate *)",
+            "Bash(helm template *)", "Bash(helm lint *)", "Bash(helm diff *)",
+            "Bash(promtool check *)", "Bash(amtool check-config *)",
+            "Bash(tfsec *)", "Bash(checkov *)", "Bash(trivy *)", "Bash(gitleaks *)", "Bash(semgrep *)",
+            # agent team: workspace tooling (read-only queries)
+            "Bash(crew list *)", "Bash(crew log *)", "Bash(crew diff *)",
+            "Bash(crew path *)", "Bash(crew merge-cmd *)",
+        ],
+        "ask": [
+            "Bash(ssh:*)", "Bash(sudo:*)",
+            # SRE team: anything that changes infra state or moves your working branch
+            "Bash(terraform apply *)", "Bash(tofu apply *)",
+            "Bash(kubectl apply *)", "Bash(kubectl patch *)", "Bash(kubectl rollout *)",
+            "Bash(helm upgrade *)", "Bash(helm install *)",
+            "Bash(git push *)", "Bash(git checkout *)", "Bash(git switch *)", "Bash(git merge *)",
+            "Bash(git rebase *)", "Bash(git reset *)", "Bash(git stash *)",
+            "Bash(git worktree add *)", "Bash(git worktree remove *)", "Bash(crew task *)",
+        ],
+        "deny": [
+            # secrets and local config
+            "Read(./.env)", "Read(./.env.*)", "Read(**/.env)", "Read(**/.env.*)",
+            "Read(**/.ssh/**)", "Read(**/*.pem)", "Read(**/*.key)", "Read(**/id_rsa*)", "Read(**/id_ed25519*)",
+            "Read(~/.aws/credentials)", "Read(~/.kube/config)",
+            "Read(./.mise.toml)", "Read(**/.mise.toml)", "Read(**/.mise.local.toml)",
+            "Edit(./.env)", "Edit(./.env.*)", "Edit(./.mise.toml)", "Edit(**/.mise.toml)",
+            # SRE team: irreversible operations are never run by an agent
+            "Bash(terraform destroy *)", "Bash(tofu destroy *)",
+            "Bash(kubectl delete namespace *)", "Bash(kubectl delete ns *)", "Bash(helm uninstall *)",
+            "Bash(git push --force *)", "Bash(git push -f *)", "Bash(git branch -D *)",
+            "Bash(git worktree remove --force *)",
+        ],
+    },
+
+    # ---- hooks ---------------------------------------------------------------------------
+    "hooks": {
+        "Stop": [
+            {"hooks": [{"type": "command", "command": "printf '\\a'"}]}
+        ],
+        "PreToolUse": [
+            {"matcher": "Bash",
+             "hooks": [{"type": "command", "command": "python3 ~/.claude/hooks/guard-infra.py"}]}
+        ],
+        "WorktreeCreate": [
+            {"hooks": [{"type": "command", "command": "python3 ~/.claude/bin/crew hook-create"}]}
+        ],
+        "WorktreeRemove": [
+            {"hooks": [{"type": "command", "command": "python3 ~/.claude/bin/crew hook-remove"}]}
+        ],
+        "SubagentStop": [
+            # every agent that writes: the four worktree agents plus spike-engineer,
+            # which commits its finish in the human's checkout instead
+            {"matcher": "infra-engineer|system-designer|craft-engineer|spike-engineer",
+             "hooks": [{"type": "command", "command": "python3 ~/.claude/bin/crew hook-stop"}]}
+        ],
+    },
+}
+
+
+def dedupe(seq):
+    seen, out = set(), []
+    for x in seq:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+def merge(cur, want):
+    for k, v in want.items():
+        if k in ("permissions", "hooks"):
+            continue
+        cur[k] = v  # enforced
+
+    perms = cur.setdefault("permissions", {})
+    for k, v in want["permissions"].items():
+        if k in ("allow", "ask", "deny"):
+            continue
+        perms[k] = v  # e.g. defaultMode, enforced
+    for k in ("allow", "ask", "deny"):
+        perms[k] = dedupe(want["permissions"].get(k, []) + perms.get(k, []))
+    for k in ("allow", "ask"):
+        perms[k] = [r for r in perms[k] if r not in perms["deny"]]
+
+    hooks = cur.setdefault("hooks", {})
+    for event, matchers in want["hooks"].items():
+        have = hooks.setdefault(event, [])
+        for m in matchers:
+            cmd = m["hooks"][0]["command"]
+            present = any(h.get("command") == cmd
+                          for existing in have for h in existing.get("hooks", []))
+            if not present:
+                have.append(m)
+    return cur
+
+
+def main():
+    raw = sys.stdin.read()
+    try:
+        cur = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError as e:
+        # never clobber a file we can't parse: pass it through unchanged and complain
+        sys.stderr.write(f"modify_settings.json: existing settings.json is not valid JSON ({e}); left unchanged\n")
+        sys.stdout.write(raw)
+        return 0
+    sys.stdout.write(json.dumps(merge(cur, SETTINGS), indent=2) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

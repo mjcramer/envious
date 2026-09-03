@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Self-test for the Claude Code SRE agent team. Runs after `chezmoi apply` whenever any of the
+# files below change (the hashes make this script's content — and therefore its run — change).
+#
+# guard-infra.py:       {{ include "dot_claude/hooks/executable_guard-infra.py" | sha256sum }}
+# crew:                 {{ include "dot_claude/bin/executable_crew" | sha256sum }}
+# modify_settings.json: {{ include "dot_claude/modify_settings.json.tmpl" | sha256sum }}
+# CLAUDE.md:            {{ include "dot_claude/CLAUDE.md" | sha256sum }}
+set -uo pipefail
+
+CLAUDE_DIR="{{ .chezmoi.homeDir }}/.claude"
+fail=0
+ok()   { printf '  ok    %s\n' "$1"; }
+bad()  { printf '  FAIL  %s\n' "$1"; fail=1; }
+
+echo "claude agent-team self-test"
+
+# 1. prerequisites
+command -v python3 >/dev/null && ok "python3 present" || bad "python3 missing (hooks and crew need it)"
+command -v git     >/dev/null && ok "git present"     || bad "git missing"
+
+# 2. settings.json is valid JSON and carries the hooks
+if python3 - "$CLAUDE_DIR/settings.json" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+h = s.get("hooks", {})
+need = {"PreToolUse": "guard-infra.py", "WorktreeCreate": "hook-create",
+        "WorktreeRemove": "hook-remove", "SubagentStop": "hook-stop"}
+missing = [e for e, frag in need.items()
+           if not any(frag in hk.get("command", "") for m in h.get(e, []) for hk in m.get("hooks", []))]
+sys.exit(1 if missing else 0)
+PY
+then ok "settings.json valid, all four hooks wired"; else bad "settings.json missing hooks or invalid"; fi
+
+# 3. agents present
+for a in system-designer craft-engineer spike-engineer infra-engineer security-reviewer incident-responder; do
+  [ -f "$CLAUDE_DIR/agents/$a.md" ] && ok "agent $a" || bad "agent $a missing"
+done
+
+# 4. guard hook classifies correctly
+guard() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1" | python3 "$CLAUDE_DIR/hooks/guard-infra.py"; }
+guard "terraform destroy"                 | grep -q '"deny"' && ok "guard denies terraform destroy" || bad "guard did not deny terraform destroy"
+guard "kubectl --context prod-w apply -f x" | grep -q '"ask"' && ok "guard asks on prod kubectl"   || bad "guard did not ask on prod kubectl"
+[ -z "$(guard 'terraform plan')" ]                            && ok "guard allows terraform plan"   || bad "guard blocked terraform plan"
+
+# 5. crew can create a workspace and commit an in-checkout iteration
+#    (scratch repo under mktemp; nothing touches your repos)
+T="$(mktemp -d)"
+git -C "$T" init -q -b main . && git -C "$T" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+WS="$(printf '{"cwd":"%s","base_ref":"head","agent_type":"craft-engineer"}' "$T" \
+      | AGENT_WS_ROOT="$T-ws" python3 "$CLAUDE_DIR/bin/crew" hook-create 2>/dev/null)"
+[ -d "$WS" ] && ok "crew creates worktree $(basename "$WS")" || bad "crew could not create a workspace"
+echo scratch > "$T/scratch.py"
+printf '{"cwd":"%s","agent_type":"spike-engineer","last_assistant_message":"selftest"}' "$T" \
+  | python3 "$CLAUDE_DIR/bin/crew" hook-stop >/dev/null 2>&1
+git -C "$T" log --oneline -1 2>/dev/null | grep -q '\[spike-engineer #1\]' \
+  && ok "crew commits spike-engineer's finish in the checkout" \
+  || bad "crew did not commit the in-checkout iteration"
+rm -rf "$T" "$T-ws"
+
+# 6. PATH hint (informational only)
+case ":$PATH:" in
+  *":$CLAUDE_DIR/bin:"*) ok "~/.claude/bin on PATH" ;;
+  *) echo "  note  add ~/.claude/bin to PATH to run 'crew' directly" ;;
+esac
+
+if [ "$fail" -ne 0 ]; then
+  echo "claude agent-team self-test: FAILED (chezmoi apply already wrote the files; fix and re-run 'chezmoi apply')"
+  exit 1
+fi
+echo "claude agent-team self-test: all good — restart any running 'claude' session and run /agents"
