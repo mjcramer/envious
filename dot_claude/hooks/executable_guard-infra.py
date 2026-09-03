@@ -68,6 +68,12 @@ ASK_PATTERNS = [
     (r"(?:^|\s)(-e|--env|--environment)[= ]?prod(uction)?\b", "explicit prod environment flag"),
     (r"(?:^|\s)(ENV|ENVIRONMENT|STAGE|DEPLOY_ENV)=prod(uction)?\b", "prod environment variable"),
     (r"\bsudo\b", "sudo"),
+    # hardware: anything that reprograms a device or changes what the kernel has loaded
+    (r"\b(fwupdmgr\s+(install|update|downgrade)|flashrom\b.*-w|dfu-util\b.*-D|avrdude\b.*-U)",
+     "flashing firmware is one-way on most devices"),
+    (r"\b(rmmod|modprobe\s+-r)\b", "removing a kernel module can drop a live device"),
+    (r"\budevadm\s+(control|trigger)\b", "reloading udev re-enumerates devices"),
+    (r"\b(hdparm|nvme\s+format|blkdiscard|eject)\b", "low-level storage/device operation"),
     (r"\bsystemctl\s+(restart|stop|disable|mask)\b", "service restart/stop"),
     (r"\bssh\s+\S*(prod|robot|kiosk|device)", "ssh to a production/fleet host"),
     (r"\bgit\s+push\b", "git push"),

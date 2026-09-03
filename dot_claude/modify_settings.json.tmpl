@@ -52,6 +52,10 @@ SETTINGS = {
             "Bash(helm template *)", "Bash(helm lint *)", "Bash(helm diff *)",
             "Bash(promtool check *)", "Bash(amtool check-config *)",
             "Bash(tfsec *)", "Bash(checkov *)", "Bash(trivy *)", "Bash(gitleaks *)", "Bash(semgrep *)",
+            # hardware: read-only device inspection (nothing here changes system state)
+            "Bash(lsusb *)", "Bash(lspci *)", "Bash(lsblk *)", "Bash(lsmod *)", "Bash(lscpu *)",
+            "Bash(lshw *)", "Bash(dmesg *)", "Bash(udevadm info *)", "Bash(udevadm monitor *)",
+            "Bash(journalctl *)", "Bash(uname *)", "Bash(smartctl *)", "Bash(evtest *)",
             # agent team: workspace tooling (read-only queries)
             "Bash(crew list *)", "Bash(crew log *)", "Bash(crew diff *)",
             "Bash(crew path *)", "Bash(crew merge-cmd *)",
@@ -99,7 +103,7 @@ SETTINGS = {
         "SubagentStop": [
             # every agent that writes: the four worktree agents plus spike-engineer,
             # which commits its finish in the human's checkout instead
-            {"matcher": "infra-engineer|system-designer|craft-engineer|spike-engineer",
+            {"matcher": "infra-engineer|hardware-engineer|system-designer|craft-engineer|spike-engineer",
              "hooks": [{"type": "command", "command": "python3 ~/.claude/bin/crew hook-stop"}]}
         ],
     },
