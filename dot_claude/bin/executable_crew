@@ -138,10 +138,7 @@ def resolve_base(main, base_ref):
 
 
 def iter_log_path(path, branch):
-    common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=path))
-    d = common / "agent-iterations"
-    d.mkdir(exist_ok=True)
-    return d / (branch.replace("/", "__") + ".log")
+    return iter_dir(path) / (branch.replace("/", "__") + ".log")
 
 
 def read_iterations(path, branch):
@@ -182,6 +179,47 @@ def copy_worktreeinclude(main, dest):
             log(f"copied {rel} (from .worktreeinclude)")
 
 
+def iter_dir(path):
+    common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=path))
+    d = common / "agent-iterations"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def capture_payload(cwd, event, payload):
+    """Record the raw hook payload. Claude Code's WorktreeCreate payload does not
+    reliably carry agent_type for subagents, so keep the last one per event to
+    debug against without needing another live run."""
+    try:
+        (iter_dir(cwd) / f"last-{event}.json").write_text(json.dumps(payload, indent=2))
+    except Exception:
+        pass  # diagnostics must never break a hook
+
+
+def index_file(path):
+    return iter_dir(path) / "agents.json"
+
+
+def read_index(path):
+    try:
+        return json.loads(index_file(path).read_text())
+    except Exception:
+        return {}
+
+
+def record_agent_workspace(path, agent, ws):
+    """Remember which workspace an agent actually ran in. WorktreeCreate cannot name
+    the workspace after the agent, but SubagentStop knows the type, so the mapping is
+    built on the way out and the CLI resolves through it."""
+    try:
+        idx = read_index(path)
+        seen = [w for w in idx.get(agent, []) if w != str(ws)]
+        idx[agent] = [str(ws)] + seen
+        index_file(path).write_text(json.dumps(idx, indent=2))
+    except Exception:
+        pass
+
+
 def checkout_key(branch, agent):
     """Iteration-log key for an in-checkout agent: its history is per branch AND per agent."""
     return f"{branch}@{agent}"
@@ -206,6 +244,9 @@ def find_workspace(cwd, agent):
     top = Path(git("rev-parse", "--show-toplevel", cwd=cwd))
     if top.name == f"{repo_name(main)}.{agent}":
         return main, top
+    for ws in read_index(main).get(agent, []):     # generically named at create time
+        if Path(ws).exists():
+            return main, Path(ws)
     raise SystemExit(f"no workspace for '{agent}' (expected {p})")
 
 
@@ -222,6 +263,7 @@ def resolve_agent(cwd, agent):
 # ----------------------------------------------------------------------------- hooks
 def hook_create(payload):
     cwd = payload.get("cwd") or os.getcwd()
+    capture_payload(cwd, "WorktreeCreate", payload)
     main = main_checkout(cwd)
     agent = safe_slug(agent_from_payload(payload))
     path = ws_path(main, agent)
@@ -293,25 +335,66 @@ def stop_in_checkout(cwd, agent, summary):
     return 0
 
 
+def adopt_branch(path, branch, agent):
+    """Give the branch the name it should have had.
+
+    WorktreeCreate builds the branch name from the payload it gets, and for a subagent
+    that payload carries a generated id, not the agent type -- so branches start life as
+    agent/agent-<id>/<stamp>. SubagentStop *does* know the type, so rename once here."""
+    want = f"{BRANCH_PREFIX}{agent}/"
+    if branch.startswith(want):
+        return branch
+    stamp = branch.rsplit("/", 1)[-1]
+    name, i = f"{want}{stamp}", 2
+    while git("rev-parse", "--verify", "-q", f"refs/heads/{name}", cwd=path, check=False):
+        name, i = f"{want}{stamp}-{i}", i + 1
+    base = branch_base(path, branch)
+    old_log = iter_log_path(path, branch)
+    git("branch", "-m", branch, name, cwd=path)
+    if base:
+        set_branch_base(path, name, base)
+    new_log = iter_log_path(path, name)
+    if old_log.exists() and not new_log.exists():
+        old_log.rename(new_log)          # carry iteration history across the rename
+    log(f"renamed {branch} -> {name}")
+    return name
+
+
 def hook_stop(payload):
-    cwd = payload.get("cwd") or os.getcwd()
-    agent = safe_slug(agent_from_payload(payload))
+    # This hook commits and renames branches, so it acts only on a payload that names
+    # both the agent and its working directory. No guessing, no os.getcwd() fallback:
+    # a malformed payload must be a no-op, not a commit in whatever repo we are in.
+    agent_type = (payload.get("agent_type") or "").strip()
+    cwd = payload.get("cwd")
+    if not agent_type or not cwd or not Path(cwd).is_dir():
+        log("stop: payload does not identify an agent and cwd; doing nothing")
+        return 0
+    agent = safe_slug(agent_type)
     summary = summarize(payload)
+    capture_payload(cwd, "SubagentStop", payload)
     if agent in IN_CHECKOUT_AGENTS:
         return stop_in_checkout(cwd, agent, summary)
+    # Locate the worktree the agent actually ran in from its cwd. Do NOT rebuild the
+    # path from the agent name: WorktreeCreate does not know the agent type, so the
+    # workspace is not necessarily named <repo>.<agent>.
     try:
-        main, path = find_workspace(cwd, agent)
-    except SystemExit:
-        return 0  # agent did not run in a workspace; nothing to do
+        main = main_checkout(cwd)
+        path = Path(git("rev-parse", "--show-toplevel", cwd=cwd))
+    except RuntimeError:
+        return 0  # not in a repo
+    if path == main:
+        return 0  # ran in the human's checkout, not a workspace: leave it alone
     branch = current_branch(path)
     if not branch.startswith(BRANCH_PREFIX):
         return 0
+    branch = adopt_branch(path, branch, agent)
     its = read_iterations(path, branch)
     n = (its[-1]["n"] + 1) if its else 1
     if is_dirty(path):
         git("add", "-A", cwd=path)
         git("commit", "-q", "-m", f"[{agent} #{n}] {summary}", cwd=path)
     head = git("rev-parse", "HEAD", cwd=path)
+    record_agent_workspace(main, agent, path)
     if its and its[-1]["sha"] == head:
         return 0  # nothing changed this iteration
     record_iteration(path, branch, head, summary)
@@ -322,6 +405,7 @@ def hook_stop(payload):
 def hook_remove(payload):
     # Never remove the workspace. Only drop a branch that has no work on it.
     cwd = payload.get("cwd") or os.getcwd()
+    capture_payload(cwd, "WorktreeRemove", payload)
     agent = safe_slug(agent_from_payload(payload))
     if agent in IN_CHECKOUT_AGENTS:
         return 0  # no worktree of its own; never touch the human's checkout
@@ -344,13 +428,14 @@ def hook_remove(payload):
 def cmd_list(_):
     main = main_checkout(os.getcwd())
     prefix = f"{repo_name(main)}."
+    by_path = {w: a for a, ws in read_index(main).items() for w in ws}
     rows = []
     for line in git("worktree", "list", "--porcelain", cwd=main).split("\n\n"):
         wt = dict(l.split(" ", 1) for l in line.splitlines() if " " in l)
         p = Path(wt.get("worktree", ""))
         if not p.name.startswith(prefix):
             continue
-        agent = p.name[len(prefix):]
+        agent = by_path.get(str(p)) or p.name[len(prefix):]
         br = wt.get("branch", "").replace("refs/heads/", "") or "(detached)"
         base = branch_base(p, br) if br != "(detached)" else ""
         ahead = git("rev-list", "--count", f"{base}..{br}", cwd=p, check=False) if base else "?"
