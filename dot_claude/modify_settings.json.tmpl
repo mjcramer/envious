@@ -19,6 +19,15 @@ HOME = "{{ .chezmoi.homeDir }}"
 
 SETTINGS = {
     # ---- general -------------------------------------------------------------------------
+    # Agent teams (experimental): teammates are full sessions that appear in a panel under
+    # the prompt. Arrow keys select one, Enter opens its session to talk to it directly,
+    # Escape returns to the lead. This is what makes the team addressable rather than
+    # fire-and-forget.
+    "env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"},
+    # Every session starts as the orchestrator. The delegation rules live in that agent's
+    # prompt rather than in CLAUDE.md, so teammates -- which load CLAUDE.md like any other
+    # session -- are not also told that they are the orchestrator and should delegate.
+    "agent": "orchestrator",
     "model": "opus",
     "effortLevel": "high",
     "skipDangerousModePermissionPrompt": True,

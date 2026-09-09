@@ -33,8 +33,8 @@ PY
 then ok "settings.json valid, all four hooks wired"; else bad "settings.json missing hooks or invalid"; fi
 
 # 3. agents present
-for a in system-designer craft-engineer spike-engineer infra-engineer hardware-engineer \
-         security-reviewer incident-responder; do
+for a in orchestrator system-designer craft-engineer spike-engineer infra-engineer \
+         hardware-engineer security-reviewer incident-responder; do
   [ -f "$CLAUDE_DIR/agents/$a.md" ] && ok "agent $a" || bad "agent $a missing"
 done
 
