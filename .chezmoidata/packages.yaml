@@ -78,6 +78,7 @@ packages:
       - slack
       - spotify
       - virtualbox
+      - zed
       - zoom
 
   apt:
