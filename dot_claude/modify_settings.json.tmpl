@@ -56,7 +56,7 @@ SETTINGS = {
             "mcp__notion__notion-update-page",
             "mcp__claude_ai_Notion__notion-fetch", "mcp__claude_ai_Notion__notion-search",
             "mcp__claude_ai_Notion__notion-update-page",
-            # SRE team: read-only infra inspection and scanners
+            # agent team: read-only infra inspection and scanners
             "Bash(tofu plan *)", "Bash(tofu validate *)",
             "Bash(helm template *)", "Bash(helm lint *)", "Bash(helm diff *)",
             "Bash(promtool check *)", "Bash(amtool check-config *)",
@@ -71,7 +71,7 @@ SETTINGS = {
         ],
         "ask": [
             "Bash(ssh:*)", "Bash(sudo:*)",
-            # SRE team: anything that changes infra state or moves your working branch
+            # agent team: anything that changes infra state or moves your working branch
             "Bash(terraform apply *)", "Bash(tofu apply *)",
             "Bash(kubectl apply *)", "Bash(kubectl patch *)", "Bash(kubectl rollout *)",
             "Bash(helm upgrade *)", "Bash(helm install *)",
@@ -86,7 +86,7 @@ SETTINGS = {
             "Read(~/.aws/credentials)", "Read(~/.kube/config)",
             "Read(./.mise.toml)", "Read(**/.mise.toml)", "Read(**/.mise.local.toml)",
             "Edit(./.env)", "Edit(./.env.*)", "Edit(./.mise.toml)", "Edit(**/.mise.toml)",
-            # SRE team: irreversible operations are never run by an agent
+            # agent team: irreversible operations are never run by an agent
             "Bash(terraform destroy *)", "Bash(tofu destroy *)",
             "Bash(kubectl delete namespace *)", "Bash(kubectl delete ns *)", "Bash(helm uninstall *)",
             "Bash(git push --force *)", "Bash(git push -f *)", "Bash(git branch -D *)",

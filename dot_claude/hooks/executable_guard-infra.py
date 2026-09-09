@@ -100,7 +100,7 @@ def main() -> int:
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
                     "permissionDecisionReason": (
-                        f"Blocked by SRE guard: {reason}. Hand the exact command to the human "
+                        f"Blocked by the command guard: {reason}. Hand the exact command to the human "
                         f"to run manually, and explain the rollback path."
                     ),
                 }
@@ -113,7 +113,7 @@ def main() -> int:
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "ask",
-                    "permissionDecisionReason": f"SRE guard: {reason} — confirm before running.",
+                    "permissionDecisionReason": f"Command guard: {reason} — confirm before running.",
                 }
             }))
             return 0
