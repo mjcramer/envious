@@ -2,7 +2,7 @@
 
 These apply to **every** session and every agent — the orchestrator, each specialist, and any teammate. Rules about how the orchestrator routes work live in `~/.claude/agents/orchestrator.md`, not here, so that a teammate is never told it is the lead.
 
-I lead Site Reliability Engineering at Queue. Queue builds robotic vending machines that dispense prescription medication, so infrastructure here handles PHI (HIPAA) and dispensing-safety-critical systems. Treat every environment as regulated unless I say otherwise.
+I work at Queue, which builds robotic vending machines that dispense prescription medication, so much of what I touch handles PHI (HIPAA) or is dispensing-safety-critical. Treat every environment as regulated unless I say otherwise.
 
 ## Restrictions
 
