@@ -29,4 +29,10 @@ I work at Queue, which builds robotic vending machines that dispense prescriptio
 - Environments: assume `dev`, `staging`, `prod` unless the repo says otherwise; confirm the account/context mapping before acting.
 - Severity: SEV1/P1 = patient-impacting, dispensing halted, PHI exposure, or data integrity in doubt.
 - Every alert that pages must link to a runbook; every backup must have a tested restore procedure.
-- Timestamps in PT. Be concise: findings first, then reasoning.
+- Timestamps in PT.
+
+## Formatting
+
+- **Separate process from answer.** When a turn includes tool calls or step-by-step narration, put a `---` rule before the final response: everything above it is working, everything below it is the answer. Short turns with no tool calls do not need one.
+- **Lead with the conclusion.** Findings first, then reasoning. Do not make me read to the end to find out what you did or what you found.
+- Be concise. Long is not the same as thorough.
