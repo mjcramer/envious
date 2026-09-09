@@ -39,7 +39,10 @@ DENY_PATTERNS = [
     (r"\bdrop\s+(database|table|schema)\b", "DROP DATABASE/TABLE/SCHEMA"),
     (r"\btruncate\s+table\b", "TRUNCATE TABLE"),
     (r"\bpg_dropcluster\b", "dropping a Postgres cluster"),
-    # Git
+    # Git / GitHub
+    (r"\bgh\s+pr\s+merge\b", "landing a pull request is the human's call alone"),
+    (r"\bgh\s+api\b.*/pulls/\d+/merge", "merging a pull request through the API"),
+    (r"\bgit\s+remote\s+(add|remove|rm|set-url|rename)\b", "changing where this repo points"),
     (r"\bgit\s+push\b.*(--force|-f\b|\+)\s*.*\b(main|master|prod|production|release)\b", "force-push to a protected branch"),
     (r"\bgit\s+push\b.*\b(main|master|prod|production|release)\b.*(--force|-f\b)", "force-push to a protected branch"),
     (r"\bgit\s+(branch\s+-D|reset\s+--hard\s+origin)", "destructive git history operation"),
@@ -77,6 +80,7 @@ ASK_PATTERNS = [
     (r"\bsystemctl\s+(restart|stop|disable|mask)\b", "service restart/stop"),
     (r"\bssh\s+\S*(prod|robot|kiosk|device)", "ssh to a production/fleet host"),
     (r"\bgit\s+push\b", "git push"),
+    (r"\bgh\s+pr\s+create\b", "opening a pull request"),
     # the human's working branch is read-only to agents: anything that moves HEAD or discards work asks
     (r"\bgit\s+(checkout|switch|merge|rebase|reset|stash|cherry-pick|restore)\b", "git operation that moves HEAD or discards changes"),
     (r"\bgit\s+worktree\s+(add|remove|prune)\b", "manual worktree change (crew manages these)"),

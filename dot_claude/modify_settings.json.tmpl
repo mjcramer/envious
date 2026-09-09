@@ -131,17 +131,18 @@ SETTINGS = {
             "Bash(wget:*)",
             "Bash(xargs:*)",
             "Edit(**)",
-            "Read(**)",
-            "Read(/tmp)",
-            "Skill(update-config)",
             "mcp__claude_ai_Notion__notion-create-pages",
             "mcp__claude_ai_Notion__notion-fetch",
             "mcp__claude_ai_Notion__notion-search",
             "mcp__claude_ai_Notion__notion-update-page",
+            "Read(**)",
+            "Read(/tmp)",
+            "Skill(update-config)",
         ],
         "ask": [
             # Changes infra state, or moves my working branch.
             "Bash(crew task *)",
+            "Bash(gh pr create *)",
             "Bash(git checkout *)",
             "Bash(git merge *)",
             "Bash(git push *)",
@@ -164,6 +165,9 @@ SETTINGS = {
         "deny": [
             # Secrets, local config, and operations no agent runs. deny beats ask beats allow,
             # so these narrow the broad allows above; the PreToolUse guard runs regardless.
+            "Bash(gh api *--method PUT*)",
+            "Bash(gh api *-X PUT*)",
+            "Bash(gh pr merge *)",
             "Bash(git branch -D *)",
             "Bash(git push --force *)",
             "Bash(git push -f *)",
