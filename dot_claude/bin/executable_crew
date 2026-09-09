@@ -587,11 +587,14 @@ def cmd_path(args):
     return 0
 
 
+HELP_FLAGS = {"help", "-h", "--help"}
+
+
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        return 1
-    cmd, args = sys.argv[1], sys.argv[2:]
+    cmd, args = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else (None, [])
+    if cmd is None or cmd in HELP_FLAGS:
+        print(__doc__.strip())  # asking for help is not an error
+        return 0
     if cmd.startswith("hook-"):
         try:
             payload = json.load(sys.stdin)
@@ -605,8 +608,10 @@ def main():
     table = {"list": cmd_list, "log": cmd_log, "diff": cmd_diff, "task": cmd_task,
              "merge-cmd": cmd_merge_cmd, "path": cmd_path}
     if cmd not in table:
-        print(__doc__)
-        return 1
+        print(f"crew: unknown subcommand '{cmd}'\n"
+              f"       valid: {', '.join(table)}\n"
+              f"       try 'crew help' for usage", file=sys.stderr)
+        return 2
     return table[cmd](args)
 
 
