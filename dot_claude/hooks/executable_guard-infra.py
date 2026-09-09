@@ -7,12 +7,38 @@ Reads the hook payload on stdin, inspects tool_input.command, and:
   - forces an ASK (interactive confirmation) for anything that looks production-scoped
   - otherwise ALLOWS by exiting 0 with no output (normal permission rules still apply)
 
+WHAT THIS CAN AND CANNOT DO. Pattern-matching a command line is harm reduction, not
+enforcement. It raises the cost of an accident; it does not stop a determined path. A
+mutation can live in a file the pattern never sees (`gh api graphql --input x.json`), and
+a token with `repo` scope can merge a PR by routes no regex enumerates. The rule "no agent
+lands a pull request" is only true when the token cannot do it: use a fine-grained PAT
+without `administration`, and protect the branch server-side. Treat everything below as a
+seatbelt, not a lock.
+
 Extend DENY_PATTERNS / ASK_PATTERNS to match your stack. Test with:
   echo '{"tool_name":"Bash","tool_input":{"command":"terraform destroy"}}' | python3 guard-infra.py
 """
 import json
 import re
 import sys
+
+# `git -C <path> push` is the idiomatic form for working across worktrees, and it defeats
+# every \bgit\s+push\b style pattern below -- as does `git --git-dir=... merge`, and as do
+# quotes around a subcommand (`gh 'pr' merge`). Anthropic's own permission docs note the
+# glob layer does not stop these either. Strip both before matching so the patterns see a
+# canonical command. Anything added here must be a *global* option that takes no subcommand.
+GIT_GLOBAL_OPTS = re.compile(
+    r"\bgit\s+((?:-C\s+\S+|-c\s+\S+|--git-dir(?:=|\s+)\S+|--work-tree(?:=|\s+)\S+"
+    r"|--namespace(?:=|\s+)\S+|--exec-path(?:=|\s+)\S+|-P|--no-pager|--literal-pathspecs)\s+)+"
+)
+
+
+def normalize(cmd: str) -> str:
+    """Canonical form of a command for pattern matching. Not a security boundary on its
+    own -- see the note in DENY_PATTERNS about what this can and cannot enforce."""
+    flat = " ".join(cmd.split())
+    flat = GIT_GLOBAL_OPTS.sub("git ", flat)
+    return flat.replace("'", "").replace('"', "")
 
 DENY_PATTERNS = [
     # Terraform / OpenTofu
@@ -41,8 +67,16 @@ DENY_PATTERNS = [
     (r"\bpg_dropcluster\b", "dropping a Postgres cluster"),
     # Git / GitHub
     (r"\bgh\s+pr\s+merge\b", "landing a pull request is the human's call alone"),
-    (r"\bgh\s+api\b.*/pulls/\d+/merge", "merging a pull request through the API"),
-    (r"\bgit\s+remote\s+(add|remove|rm|set-url|rename)\b", "changing where this repo points"),
+    (r"\bgh\s+api\b.*/pulls/[^/\s]+/merge", "merging a pull request through the API"),
+    (r"api\.github\.com.*/pulls/[^/\s]+/merge", "merging a pull request through the API"),
+    (r"\bmergePullRequest\b", "merging a pull request through the GraphQL API"),
+    (r"\bgh\s+api\s+graphql\b", "gh api graphql can carry a merge mutation in a file we cannot see"),
+    (r"\bgh\s+alias\s+set\b", "a gh alias can rename a denied command"),
+    (r"\bgh\s+api\b.*(branches/[^\s]*/protection|rulesets)", "branch protection is the backstop; it is not yours to change"),
+    (r"\bgit\s+remote\s+(add|remove|rm|set-url|set-branches|rename)\b", "changing where this repo points"),
+    (r"\bgit\s+config\b.*\bremote\.[^\s]*\.url\b", "git config remote.<name>.url repoints the remote just as set-url does"),
+    (r"\bgit\s+config\b.*\binsteadOf\b", "an insteadOf rewrite silently redirects every push and fetch"),
+    (r"\bGIT_CONFIG_KEY_\d+\s*=", "GIT_CONFIG_* env vars inject config without touching a config file"),
     (r"\bgit\s+push\b.*(--force|-f\b|\+)\s*.*\b(main|master|prod|production|release)\b", "force-push to a protected branch"),
     (r"\bgit\s+push\b.*\b(main|master|prod|production|release)\b.*(--force|-f\b)", "force-push to a protected branch"),
     (r"\bgit\s+(branch\s+-D|reset\s+--hard\s+origin)", "destructive git history operation"),
@@ -81,6 +115,9 @@ ASK_PATTERNS = [
     (r"\bssh\s+\S*(prod|robot|kiosk|device)", "ssh to a production/fleet host"),
     (r"\bgit\s+push\b", "git push"),
     (r"\bgh\s+pr\s+create\b", "opening a pull request"),
+    (r"\b(curl|wget)\b.*\bapi\.github\.com\b", "a direct call to the GitHub API"),
+    (r"\bgh\s+workflow\s+(run|dispatch)\b", "dispatching a workflow, which may merge on your behalf"),
+    (r"\bgh\s+pr\s+review\b.*--approve", "approving a pull request"),
     # the human's working branch is read-only to agents: anything that moves HEAD or discards work asks
     (r"\bgit\s+(checkout|switch|merge|rebase|reset|stash|cherry-pick|restore)\b", "git operation that moves HEAD or discards changes"),
     (r"\bgit\s+worktree\s+(add|remove|prune)\b", "manual worktree change (crew manages these)"),
@@ -95,7 +132,7 @@ def main() -> int:
     if payload.get("tool_name") != "Bash":
         return 0
     cmd = (payload.get("tool_input") or {}).get("command", "") or ""
-    flat = " ".join(cmd.split())
+    flat = normalize(cmd)
 
     for pattern, reason in DENY_PATTERNS:
         if re.search(pattern, flat, re.IGNORECASE):
