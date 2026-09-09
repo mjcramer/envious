@@ -44,22 +44,113 @@ guard "terraform destroy"                 | grep -q '"deny"' && ok "guard denies
 guard "kubectl --context prod-w apply -f x" | grep -q '"ask"' && ok "guard asks on prod kubectl"   || bad "guard did not ask on prod kubectl"
 [ -z "$(guard 'terraform plan')" ]                            && ok "guard allows terraform plan"   || bad "guard blocked terraform plan"
 
-# 5. crew can create a workspace and commit an in-checkout iteration
-#    (scratch repo under mktemp; nothing touches your repos)
-T="$(mktemp -d)"
-git -C "$T" init -q -b main . && git -C "$T" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
-WS="$(printf '{"cwd":"%s","base_ref":"head","agent_type":"craft-engineer"}' "$T" \
-      | AGENT_WS_ROOT="$T-ws" python3 "$CLAUDE_DIR/bin/crew" hook-create 2>/dev/null)"
-[ -d "$WS" ] && ok "crew creates worktree $(basename "$WS")" || bad "crew could not create a workspace"
-echo scratch > "$T/scratch.py"
-printf '{"cwd":"%s","agent_type":"spike-engineer","last_assistant_message":"selftest"}' "$T" \
-  | python3 "$CLAUDE_DIR/bin/crew" hook-stop >/dev/null 2>&1
-git -C "$T" log --oneline -1 2>/dev/null | grep -q '\[spike-engineer #1\]' \
+# 5. crew's CLI contract: exit code and which stream the output lands on.
+#    Load-bearing because Claude Code reads hook-create's stdout as the agent's working
+#    directory — anything else printed there would silently misplace every subagent.
+CREW="$CLAUDE_DIR/bin/crew"
+T="$(mktemp -d)"                     # everything the crew checks touch stays inside $T
+trap 'rm -rf "$T"' EXIT
+OUT="$T/out"; ERR="$T/err"
+run_crew() { python3 "$CREW" "$@" >"$OUT" 2>"$ERR"; rc=$?; }
+
+[ -x "$CREW" ] && ok "crew is executable" || bad "crew is not executable"
+
+for a in "" help -h --help; do
+  run_crew ${a:+"$a"}
+  if [ "$rc" -eq 0 ] && [ ! -s "$ERR" ] && grep -q 'persistent per-agent git workspaces' "$OUT"; then
+    ok "crew ${a:-(no args)} prints usage on stdout, exit 0"
+  else
+    bad "crew ${a:-(no args)} gave rc=$rc (want 0, usage on stdout, stderr empty)"
+  fi
+done
+
+run_crew nonesuch
+if [ "$rc" -eq 2 ] && [ ! -s "$OUT" ] && grep -q "unknown subcommand 'nonesuch'" "$ERR"; then
+  ok "crew <unknown> errors on stderr, exit 2"
+else
+  bad "crew <unknown> gave rc=$rc (want 2, message on stderr, stdout empty)"
+fi
+
+# 6. crew's hooks, end to end on a scratch repo under $T. The payloads are the shape Claude
+#    Code really sends: at WorktreeCreate `name` is the only per-invocation identifier and
+#    `agent_type` is the *calling* session's agent, so the workspace is named after `name`
+#    and only SubagentStop knows the real type — that is where the branch is renamed and
+#    the <repo>.<agent> symlink is pointed at the workspace.
+R="$T/repo"; WSR="$T/ws"             # scratch repo and its workspace root
+AGENT_ID=agent-a671a08082793dbaa     # synthetic; the id shape a subagent arrives with
+# crew commits without setting an identity, so give its git subprocesses one
+export GIT_AUTHOR_NAME=selftest GIT_AUTHOR_EMAIL=selftest@localhost
+export GIT_COMMITTER_NAME=selftest GIT_COMMITTER_EMAIL=selftest@localhost
+mkdir -p "$R"
+git -C "$R" init -q -b main . && git -C "$R" commit -q --allow-empty -m init
+
+# run_crew_hook <hook-subcommand> <payload-json> [process-cwd, default: the scratch repo]
+run_crew_hook() {
+  printf '%s' "$2" | (cd "${3:-$R}" && AGENT_WS_ROOT="$WSR" python3 "$CREW" "$1") >"$OUT" 2>"$ERR"; rc=$?
+}
+
+run_crew_hook hook-create \
+  "$(printf '{"cwd":"%s","base_ref":"head","agent_type":"orchestrator","name":"%s"}' "$R" "$AGENT_ID")"
+WS="$(cat "$OUT")"
+if [ "$rc" -eq 0 ] && [ "$(wc -l <"$OUT")" -eq 1 ] && [ -d "$WS" ] && [ "$(basename "$WS")" = "repo.$AGENT_ID" ]; then
+  ok "hook-create names the workspace from payload.name ($(basename "$WS")), path alone on stdout"
+else
+  bad "hook-create gave rc=$rc, $(wc -l <"$OUT" | tr -d ' ') line(s) on stdout: $(tr '\n' ' ' <"$OUT")(want just <...>/repo.$AGENT_ID)"
+fi
+[ -d "$WS" ] || WS="$T/no-workspace"   # keep the checks below inside $T even if that failed
+
+case "$(git -C "$WS" branch --show-current 2>/dev/null)" in
+  agent/$AGENT_ID/*) ok "hook-create branches agent/$AGENT_ID/<stamp>" ;;
+  *) bad "hook-create made branch '$(git -C "$WS" branch --show-current 2>/dev/null)' (want agent/$AGENT_ID/<stamp>)" ;;
+esac
+
+echo scratch > "$WS/note.txt"
+run_crew_hook hook-stop \
+  "$(printf '{"cwd":"%s","agent_type":"craft-engineer","last_assistant_message":"selftest iteration"}' "$WS")"
+[ "$rc" -eq 0 ] && [ ! -s "$OUT" ] \
+  && ok "hook-stop keeps stdout empty, exit 0" \
+  || bad "hook-stop gave rc=$rc and $(wc -c <"$OUT" | tr -d ' ') bytes on stdout (want 0 and 0)"
+
+case "$(git -C "$WS" branch --show-current 2>/dev/null)" in
+  agent/craft-engineer/*) ok "hook-stop renames the branch to $(git -C "$WS" branch --show-current)" ;;
+  *) bad "hook-stop left branch '$(git -C "$WS" branch --show-current 2>/dev/null)' (want agent/craft-engineer/<stamp>)" ;;
+esac
+
+LINK="$WSR/repo.craft-engineer"
+[ -L "$LINK" ] && [ "$(cd "$LINK" && pwd -P)" = "$(cd "$WS" && pwd -P)" ] \
+  && ok "hook-stop links repo.craft-engineer -> $(basename "$WS")" \
+  || bad "hook-stop did not link repo.craft-engineer at the workspace"
+
+git -C "$WS" log --oneline -1 2>/dev/null | grep -q '\[craft-engineer #1\]' \
+  && ok "hook-stop commits the iteration in the workspace" \
+  || bad "hook-stop did not commit the workspace iteration"
+
+run_crew_hook hook-remove "$(printf '{"cwd":"%s","worktree_path":"%s"}' "$R" "$WS")"
+[ "$rc" -eq 0 ] && [ ! -s "$OUT" ] && [ -d "$WS" ] \
+  && ok "hook-remove keeps the workspace, stdout empty, exit 0" \
+  || bad "hook-remove gave rc=$rc (want 0, stdout empty, workspace kept)"
+
+echo scratch > "$R/scratch.py"
+run_crew_hook hook-stop \
+  "$(printf '{"cwd":"%s","agent_type":"spike-engineer","last_assistant_message":"selftest"}' "$R")"
+git -C "$R" log --oneline -1 2>/dev/null | grep -q '\[spike-engineer #1\]' \
   && ok "crew commits spike-engineer's finish in the checkout" \
   || bad "crew did not commit the in-checkout iteration"
-rm -rf "$T" "$T-ws"
 
-# 6. PATH hint (informational only)
+# A payload naming no agent must be a no-op, not a commit in whatever repo we happen to be
+# in. Run it from inside the workspace with the tree dirty: that is where a fallback to
+# os.getcwd() or to a default agent_type would actually commit and rename something.
+echo stray > "$WS/stray.txt"
+HEAD_BEFORE="$(git -C "$WS" rev-parse HEAD)"
+BRANCH_BEFORE="$(git -C "$WS" branch --show-current)"
+run_crew_hook hook-stop '{}' "$WS"
+[ "$rc" -eq 0 ] && [ ! -s "$OUT" ] \
+  && [ "$(git -C "$WS" rev-parse HEAD)" = "$HEAD_BEFORE" ] \
+  && [ "$(git -C "$WS" branch --show-current)" = "$BRANCH_BEFORE" ] \
+  && ok "hook-stop ignores a payload that names no agent" \
+  || bad "hook-stop acted on a payload with no agent_type (rc=$rc)"
+
+# 7. PATH hint (informational only)
 case ":$PATH:" in
   *":$CLAUDE_DIR/bin:"*) ok "~/.claude/bin on PATH" ;;
   *) echo "  note  add ~/.claude/bin to PATH to run 'crew' directly" ;;
