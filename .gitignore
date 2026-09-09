@@ -1,1 +1,5 @@
 .claude
+
+# Python bytecode left behind by running the scripts in dot_claude/ and dot_local/bin/
+__pycache__/
+*.py[cod]
