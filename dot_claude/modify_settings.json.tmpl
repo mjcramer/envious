@@ -7,7 +7,9 @@
 #   * scalar / object keys in SETTINGS (model, statusLine, defaultMode, worktree, ...) are enforced —
 #     the value here always wins over what is on disk
 #   * permission lists are unioned (your rules here + anything Claude Code saved on disk), deduped,
-#     and any rule present in `deny` is removed from `allow`/`ask`
+#     sorted, and any rule present in `deny` is removed from `allow`/`ask`
+#   * anything listed in RETIRED is stripped from every list, on disk included -- that is the only
+#     way to actually delete a rule, since the union would otherwise keep it forever
 #   * hooks are added per event unless a hook with the same command is already wired, so hooks
 #     Claude Code or you add on disk are kept and re-applies never stack duplicates
 #   * anything on disk that this file doesn't mention is left alone
@@ -16,6 +18,20 @@ import json
 import sys
 
 HOME = "{{ .chezmoi.homeDir }}"
+
+# Rules to delete wherever they appear, including entries Claude Code has already written to
+# ~/.claude/settings.json. Removing a rule from SETTINGS alone does nothing: the merge unions
+# with what is on disk, so a retired rule would survive every apply. List it here instead.
+RETIRED = {
+    # Notion goes through the claude.ai connector; the local mcp__notion__ server is gone.
+    "mcp__notion__notion-create-pages",
+    "mcp__notion__notion-fetch",
+    "mcp__notion__notion-search",
+    "mcp__notion__notion-update-page",
+    # Stale allow from the Linux box, left behind by the union. Edit({HOME}/.claude/**) is
+    # denied on each machine, and this entry quietly re-permitted it there.
+    "Edit(/home/mcramer/.claude/**)",
+}
 
 SETTINGS = {
     # ---- general -------------------------------------------------------------------------
@@ -40,57 +56,141 @@ SETTINGS = {
     "permissions": {
         "defaultMode": "auto",
         "allow": [
-            # everyday tooling
-            "Bash(awk:*)", "Bash(az:*)", "Bash(cargo:*)", "Bash(cat:*)", "Bash(cd:*)", "Bash(cp:*)",
-            "Bash(curl:*)", "Bash(databricks:*)", "Bash(docker:*)", "Bash(echo:*)", "Bash(find:*)",
-            "Bash(gh:*)", "Bash(git:*)", "Bash(grep:*)", "Bash(head:*)", "Bash(jar:*)", "Bash(javap:*)",
-            "Bash(kill:*)", "Bash(kubectl:*)", "Bash(ls:*)", "Bash(make:*)", "Bash(mkdir:*)", "Bash(mv:*)",
-            "Bash(mvn:*)", "Bash(nc:*)", "Bash(node:*)", "Bash(npm:*)", "Bash(pip:*)", "Bash(pkill:*)",
-            "Bash(pwd)", "Bash(python:*)", "Bash(python3:*)", "Bash(rm:*)", "Bash(rmdir:*)", "Bash(sort:*)",
-            "Bash(tail:*)", "Bash(terraform:*)", "Bash(touch:*)", "Bash(tree:*)", "Bash(unzip:*)",
-            "Bash(wget:*)", "Bash(xargs:*)",
-            "Edit(**)", "Read(**)", "Read(/tmp)",
-            f"Edit({HOME}/.claude/**)",
+            # Sorted alphabetically -- keep it that way; this list is looked things up in, not read.
+            # Notion is the claude.ai connector only; the local mcp__notion__ server is retired.
+            "Bash(amtool check-config *)",
+            "Bash(awk:*)",
+            "Bash(az:*)",
+            "Bash(cargo:*)",
+            "Bash(cat:*)",
+            "Bash(cd:*)",
+            "Bash(checkov *)",
+            "Bash(cp:*)",
+            "Bash(crew diff *)",
+            "Bash(crew list *)",
+            "Bash(crew log *)",
+            "Bash(crew merge-cmd *)",
+            "Bash(crew path *)",
+            "Bash(curl:*)",
+            "Bash(databricks:*)",
+            "Bash(dmesg *)",
+            "Bash(docker:*)",
+            "Bash(echo:*)",
+            "Bash(evtest *)",
+            "Bash(find:*)",
+            "Bash(gh:*)",
+            "Bash(git:*)",
+            "Bash(gitleaks *)",
+            "Bash(grep:*)",
+            "Bash(head:*)",
+            "Bash(helm diff *)",
+            "Bash(helm lint *)",
+            "Bash(helm template *)",
+            "Bash(jar:*)",
+            "Bash(javap:*)",
+            "Bash(journalctl *)",
+            "Bash(kill:*)",
+            "Bash(kubectl:*)",
+            "Bash(ls:*)",
+            "Bash(lsblk *)",
+            "Bash(lscpu *)",
+            "Bash(lshw *)",
+            "Bash(lsmod *)",
+            "Bash(lspci *)",
+            "Bash(lsusb *)",
+            "Bash(make:*)",
+            "Bash(mkdir:*)",
+            "Bash(mv:*)",
+            "Bash(mvn:*)",
+            "Bash(nc:*)",
+            "Bash(node:*)",
+            "Bash(npm:*)",
+            "Bash(pip:*)",
+            "Bash(pkill:*)",
+            "Bash(promtool check *)",
+            "Bash(pwd)",
+            "Bash(python3:*)",
+            "Bash(python:*)",
+            "Bash(rm:*)",
+            "Bash(rmdir:*)",
+            "Bash(semgrep *)",
+            "Bash(smartctl *)",
+            "Bash(sort:*)",
+            "Bash(tail:*)",
+            "Bash(terraform:*)",
+            "Bash(tfsec *)",
+            "Bash(tofu plan *)",
+            "Bash(tofu validate *)",
+            "Bash(touch:*)",
+            "Bash(tree:*)",
+            "Bash(trivy *)",
+            "Bash(udevadm info *)",
+            "Bash(udevadm monitor *)",
+            "Bash(uname *)",
+            "Bash(unzip:*)",
+            "Bash(wget:*)",
+            "Bash(xargs:*)",
+            "Edit(**)",
+            "Read(**)",
+            "Read(/tmp)",
             "Skill(update-config)",
-            "mcp__notion__notion-create-pages", "mcp__notion__notion-fetch", "mcp__notion__notion-search",
-            "mcp__notion__notion-update-page",
-            "mcp__claude_ai_Notion__notion-fetch", "mcp__claude_ai_Notion__notion-search",
+            "mcp__claude_ai_Notion__notion-fetch",
+            "mcp__claude_ai_Notion__notion-search",
             "mcp__claude_ai_Notion__notion-update-page",
-            # agent team: read-only infra inspection and scanners
-            "Bash(tofu plan *)", "Bash(tofu validate *)",
-            "Bash(helm template *)", "Bash(helm lint *)", "Bash(helm diff *)",
-            "Bash(promtool check *)", "Bash(amtool check-config *)",
-            "Bash(tfsec *)", "Bash(checkov *)", "Bash(trivy *)", "Bash(gitleaks *)", "Bash(semgrep *)",
-            # hardware: read-only device inspection (nothing here changes system state)
-            "Bash(lsusb *)", "Bash(lspci *)", "Bash(lsblk *)", "Bash(lsmod *)", "Bash(lscpu *)",
-            "Bash(lshw *)", "Bash(dmesg *)", "Bash(udevadm info *)", "Bash(udevadm monitor *)",
-            "Bash(journalctl *)", "Bash(uname *)", "Bash(smartctl *)", "Bash(evtest *)",
-            # agent team: workspace tooling (read-only queries)
-            "Bash(crew list *)", "Bash(crew log *)", "Bash(crew diff *)",
-            "Bash(crew path *)", "Bash(crew merge-cmd *)",
         ],
         "ask": [
-            "Bash(ssh:*)", "Bash(sudo:*)",
-            # agent team: anything that changes infra state or moves your working branch
-            "Bash(terraform apply *)", "Bash(tofu apply *)",
-            "Bash(kubectl apply *)", "Bash(kubectl patch *)", "Bash(kubectl rollout *)",
-            "Bash(helm upgrade *)", "Bash(helm install *)",
-            "Bash(git push *)", "Bash(git checkout *)", "Bash(git switch *)", "Bash(git merge *)",
-            "Bash(git rebase *)", "Bash(git reset *)", "Bash(git stash *)",
-            "Bash(git worktree add *)", "Bash(git worktree remove *)", "Bash(crew task *)",
+            # Changes infra state, or moves my working branch.
+            "Bash(crew task *)",
+            "Bash(git checkout *)",
+            "Bash(git merge *)",
+            "Bash(git push *)",
+            "Bash(git rebase *)",
+            "Bash(git reset *)",
+            "Bash(git stash *)",
+            "Bash(git switch *)",
+            "Bash(git worktree add *)",
+            "Bash(git worktree remove *)",
+            "Bash(helm install *)",
+            "Bash(helm upgrade *)",
+            "Bash(kubectl apply *)",
+            "Bash(kubectl patch *)",
+            "Bash(kubectl rollout *)",
+            "Bash(ssh:*)",
+            "Bash(sudo:*)",
+            "Bash(terraform apply *)",
+            "Bash(tofu apply *)",
         ],
         "deny": [
-            # secrets and local config
-            "Read(./.env)", "Read(./.env.*)", "Read(**/.env)", "Read(**/.env.*)",
-            "Read(**/.ssh/**)", "Read(**/*.pem)", "Read(**/*.key)", "Read(**/id_rsa*)", "Read(**/id_ed25519*)",
-            "Read(~/.aws/credentials)", "Read(~/.kube/config)",
-            "Read(./.mise.toml)", "Read(**/.mise.toml)", "Read(**/.mise.local.toml)",
-            "Edit(./.env)", "Edit(./.env.*)", "Edit(./.mise.toml)", "Edit(**/.mise.toml)",
-            # agent team: irreversible operations are never run by an agent
-            "Bash(terraform destroy *)", "Bash(tofu destroy *)",
-            "Bash(kubectl delete namespace *)", "Bash(kubectl delete ns *)", "Bash(helm uninstall *)",
-            "Bash(git push --force *)", "Bash(git push -f *)", "Bash(git branch -D *)",
+            # Secrets, local config, and operations no agent runs. deny beats ask beats allow,
+            # so these narrow the broad allows above; the PreToolUse guard runs regardless.
+            "Bash(git branch -D *)",
+            "Bash(git push --force *)",
+            "Bash(git push -f *)",
             "Bash(git worktree remove --force *)",
+            "Bash(helm uninstall *)",
+            "Bash(kubectl delete namespace *)",
+            "Bash(kubectl delete ns *)",
+            "Bash(terraform destroy *)",
+            "Bash(tofu destroy *)",
+            "Edit(**/.mise.toml)",
+            "Edit(./.env)",
+            "Edit(./.env.*)",
+            "Edit(./.mise.toml)",
+            f"Edit({HOME}/.claude/**)",
+            "Read(**/*.key)",
+            "Read(**/*.pem)",
+            "Read(**/.env)",
+            "Read(**/.env.*)",
+            "Read(**/.mise.local.toml)",
+            "Read(**/.mise.toml)",
+            "Read(**/.ssh/**)",
+            "Read(**/id_ed25519*)",
+            "Read(**/id_rsa*)",
+            "Read(./.env)",
+            "Read(./.env.*)",
+            "Read(./.mise.toml)",
+            "Read(~/.aws/credentials)",
+            "Read(~/.kube/config)",
         ],
     },
 
@@ -140,7 +240,10 @@ def merge(cur, want):
             continue
         perms[k] = v  # e.g. defaultMode, enforced
     for k in ("allow", "ask", "deny"):
-        perms[k] = dedupe(want["permissions"].get(k, []) + perms.get(k, []))
+        merged = dedupe(want["permissions"].get(k, []) + perms.get(k, []))
+        # sorted so the written file stays alphabetical however the union orders things --
+        # these lists get looked things up in, not read top to bottom
+        perms[k] = sorted(r for r in merged if r not in RETIRED)
     for k in ("allow", "ask"):
         perms[k] = [r for r in perms[k] if r not in perms["deny"]]
 
