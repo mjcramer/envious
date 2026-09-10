@@ -27,12 +27,17 @@
 #
 # The file is the primary output: it survives a status line that is itself being
 # truncated, and it accumulates, so resizing the window between renders gives
-# several samples to compare. Delete it when you are done.
+# several samples to compare.
 #
-# The environment dump redacts values of secret-looking variable names — the
-# session carries a messaging token, and this file is not the place for it.
-# Purely numeric values are never redacted, since a width would be numeric and
-# finding one is the whole point.
+# DELETE /tmp/statusline-probe.txt WHEN YOU ARE DONE. It is written 0600, but it
+# still describes this machine — process tree, paths, every variable the session
+# carries — and it has no reason to outlive the investigation that needed it.
+#
+# The environment is recorded as variable *names* only, with each value's length.
+# Listing the names is what answers the question the dump exists for — whether
+# anything at all carries a terminal width — and it answers it completely,
+# without this script having to decide which values are safe to write down. The
+# session carries a messaging token; a length cannot leak one.
 
 set -uo pipefail
 
@@ -103,7 +108,7 @@ umask 077
   printf '=== statusline probe %s pid=%s ===\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$$"
   printf 'usable_cols() -> %s   (ASSUMED_COLS=%s, CLAUDE_STATUSLINE_COLS=[%s])\n' \
     "$lib_says" "${lib_assumed:-?}" "${CLAUDE_STATUSLINE_COLS:-unset}"
-  printf 'COLUMNS=[%s] LINES=[%s]  (shell variables; see the env dump for whether they were exported)\n' \
+  printf 'COLUMNS=[%s] LINES=[%s]  (shell variables; the name list below says whether they were exported)\n' \
     "${COLUMNS:-unset}" "${LINES:-unset}"
   printf 'own tty=[%s] stty=[%s]\n' "${own_tty:-none}" "${own_size:-none}"
   printf 'tput cols=[%s] lines=[%s] TERM=[%s] TERMINFO=[%s]\n' \
@@ -114,21 +119,11 @@ umask 077
   printf -- '--- stdin payload (%d bytes, verbatim) ---\n' "${#payload}"
   printf '%s\n' "$payload"
 
-  printf -- '--- environment (%d variables, secret-looking values redacted) ---\n' \
+  printf -- '--- environment (%d variables, names and value lengths only) ---\n' \
     "$(env | wc -l | tr -d ' ')"
   env | LC_ALL=C sort | while IFS= read -r kv; do
-    name=${kv%%=*}
     value=${kv#*=}
-    case $name in
-      *TOKEN*|*SECRET*|*PASSWORD*|*PASSWD*|*CREDENTIAL*|*APIKEY*|*API_KEY*|*AUTH*|*_KEY)
-        if [[ "$value" =~ ^[0-9]+$ ]]; then
-          printf '%s=%s\n' "$name" "$value"
-        else
-          printf '%s=<redacted, %d chars>\n' "$name" "${#value}"
-        fi
-        ;;
-      *) printf '%s=%s\n' "$name" "$value" ;;
-    esac
+    printf '%s <%d chars>\n' "${kv%%=*}" "${#value}"
   done
 
   printf -- '--- ruler (%d columns) ---\n%s\n\n' "${#ruler}" "$ruler"
