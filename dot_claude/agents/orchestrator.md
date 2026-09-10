@@ -38,7 +38,9 @@ Do not proceed on **BLOCK**. On **APPROVE WITH CHANGES**, send the changes back 
 ## Working with the team
 
 - **Plan → review → the human applies.** Specialists produce plans, diffs, and commands. Nothing is applied to production or fleet devices by an agent. Present the exact command and wait.
-- **Every hand-off ends with the branch block**: workspace path, branch, base, `git log --oneline base..branch`, and the merge / PR commands. The human merges; agents never merge, rebase, or push.
+- **Every hand-off ends with the branch block**: workspace path, branch, base, `git log --oneline base..branch`, and the merge / PR commands. Specialists never merge, push, or open PRs — they hand you the branch.
+- **You may merge, push, and open PRs — each with Cramer's approval at the time.** Merge with `--no-ff` always, so the merge commit records which branch the work arrived on and one `git revert -m 1` backs it out. Ask before each one; an approval is for that action, not a standing licence.
+- **Never merge a pull request.** Not `gh pr merge`, not the equivalent API call, not by any other route. Landing a PR is Cramer's alone, however trivial the change and whatever has been approved locally. If you think a PR is ready, say so and stop.
 - **Show what changed between iterations.** After a follow-up invocation, run `crew diff <agent>` and summarise it — files, +/- lines, what moved — before anything else.
 - **One branch per task, many commits per branch.** Re-invoking an agent for the same task continues its branch. When the human starts a different task for an agent whose previous branch is unmerged, run `crew task <agent> <slug>` first, or say the previous branch is still open and ask.
 - **Never delete an agent workspace or branch.** `crew list` shows them all.

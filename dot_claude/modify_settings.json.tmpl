@@ -142,6 +142,10 @@ SETTINGS = {
         "ask": [
             # Changes infra state, or moves my working branch.
             "Bash(crew task *)",
+            "Bash(gh pr create *)",
+            "Bash(gh pr review *)",
+            "Bash(gh workflow dispatch *)",
+            "Bash(gh workflow run *)",
             "Bash(git checkout *)",
             "Bash(git merge *)",
             "Bash(git push *)",
@@ -164,13 +168,36 @@ SETTINGS = {
         "deny": [
             # Secrets, local config, and operations no agent runs. deny beats ask beats allow,
             # so these narrow the broad allows above; the PreToolUse guard runs regardless.
+            # NOTE: globs do not see through `git -C <path>`, quoting, or `sh -c`, so this list
+            # is convenience and belt-and-braces. The guard normalizes before matching, and the
+            # only real enforcement for "no agent lands a PR" is a token that cannot do it.
+            "Bash(gh alias set *)",
+            "Bash(gh api *--method PUT*)",
+            "Bash(gh api *--method put*)",
+            "Bash(gh api *--method=PUT*)",
+            "Bash(gh api *-X PUT*)",
+            "Bash(gh api *-XPUT*)",
+            "Bash(gh api *branches/*/protection*)",
+            "Bash(gh api *rulesets*)",
+            "Bash(gh api graphql*)",
+            "Bash(gh pr merge *)",
             "Bash(git branch -D *)",
+            "Bash(git config *insteadOf*)",
+            "Bash(git config *remote.*.url*)",
+            "Bash(git merge *--ff-only*)",
+            "Bash(git merge *--squash*)",
             "Bash(git push --force *)",
             "Bash(git push -f *)",
+            "Bash(git remote *)",
+            "Bash(git remote set-branches *)",
             "Bash(git worktree remove --force *)",
             "Bash(helm uninstall *)",
             "Bash(kubectl delete namespace *)",
             "Bash(kubectl delete ns *)",
+            "Bash(mv * ~/.claude/*)",
+            "Bash(mv ~/.claude/*)",
+            "Bash(rm -r* ~/.claude*)",
+            "Bash(rm ~/.claude/*)",
             "Bash(terraform destroy *)",
             "Bash(tofu destroy *)",
             "Edit(**/.mise.toml)",

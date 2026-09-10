@@ -572,8 +572,9 @@ def cmd_merge_cmd(args):
     print(f"# review\n"
           f"git log --oneline {base}..{br}\n"
           f"git diff {base}...{br}\n\n"
-          f"# merge into your working branch\n"
-          f"git checkout {base} && git merge --no-ff {br}\n\n"
+          f"# merge into your working branch (run from the main checkout, already on {base};\n"
+          f"# --no-ff is required so `git revert -m 1` can back the whole branch out later)\n"
+          f"git merge --no-ff {br}\n\n"
           f"# or open a PR\n"
           f"git push -u origin {br} && gh pr create --head {br} --base {base} --fill")
     return 0
