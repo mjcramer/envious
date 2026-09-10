@@ -73,8 +73,19 @@ DENY_PATTERNS = [
     (r"\bgh\s+api\s+graphql\b", "gh api graphql can carry a merge mutation in a file we cannot see"),
     (r"\bgh\s+alias\s+set\b", "a gh alias can rename a denied command"),
     (r"\bgh\s+api\b.*(branches/[^\s]*/protection|rulesets)", "branch protection is the backstop; it is not yours to change"),
-    (r"\bgit\s+remote\s+(add|remove|rm|set-url|set-branches|rename)\b", "changing where this repo points"),
-    (r"\bgit\s+config\b.*\bremote\.[^\s]*\.url\b", "git config remote.<name>.url repoints the remote just as set-url does"),
+    # The guard is a file. rm/mv/truncate reach it without going through Edit, so the
+    # Edit(~/.claude/**) deny does not cover them -- the docs are explicit that it does not
+    # apply to subprocesses that write files indirectly.
+    # Match only commands that WRITE there. An earlier version matched the path anywhere,
+    # which denied `cat ~/.claude/settings.json` -- reading the config is routine and fine.
+    (r"\b(rm|mv|cp|dd|truncate|tee|install|shred|unlink|chmod|chown)\b[^;|&]*\.claude/(hooks|settings|agents)",
+     "the agent guardrails are not the agent's to remove or overwrite"),
+    (r">>?\s*\S*\.claude/(hooks|settings|agents)",
+     "redirecting over the agent guardrails"),
+    (r"\.claude/(hooks|settings|agents)[^\s,]*\s*,\s*[wa]\b",
+     "opening the agent guardrails for writing"),
+    (r"\bgit\s+remote\s+(add|remove|rm|set-url|set-branches|set-head|rename)\b", "changing where this repo points"),
+    (r"\bgit\s+config\b.*\bremote\.[^\s]*\.(url|pushurl)\b", "git config remote.<name>.url repoints the remote just as set-url does"),
     (r"\bgit\s+config\b.*\binsteadOf\b", "an insteadOf rewrite silently redirects every push and fetch"),
     (r"\bGIT_CONFIG_KEY_\d+\s*=", "GIT_CONFIG_* env vars inject config without touching a config file"),
     (r"\bgit\s+push\b.*(--force|-f\b|\+)\s*.*\b(main|master|prod|production|release)\b", "force-push to a protected branch"),
@@ -82,6 +93,10 @@ DENY_PATTERNS = [
     (r"\bgit\s+(branch\s+-D|reset\s+--hard\s+origin)", "destructive git history operation"),
     (r"\bgit\s+worktree\s+remove\b.*(--force|-f\b)", "force-removing a worktree discards an agent's work"),
     (r"\bgit\s+branch\s+-[dD]\s+agent/", "deleting an agent branch"),
+    # A merge without --no-ff leaves no merge commit, so `git log --merges` cannot show
+    # where the change came from and `git revert -m 1` has nothing to revert. That is the
+    # whole basis on which local merging was allowed.
+    (r"\bgit\s+merge\b.*(--ff-only|--squash)", "merges must be --no-ff so they can be reverted in one step"),
     # Filesystem / host
     (r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f?\s+(/|~|\$HOME|\.\.?|\*)(\s|$)", "recursive rm on a root/home/cwd path"),
     (r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+/(etc|var|usr|boot|opt|srv)\b", "recursive rm on a system directory"),
@@ -119,6 +134,7 @@ ASK_PATTERNS = [
     (r"\bgh\s+workflow\s+(run|dispatch)\b", "dispatching a workflow, which may merge on your behalf"),
     (r"\bgh\s+pr\s+review\b.*--approve", "approving a pull request"),
     # the human's working branch is read-only to agents: anything that moves HEAD or discards work asks
+    (r"\bgit\s+merge\b(?!.*--no-ff)", "merge without --no-ff -- the merge commit is what makes this revertable"),
     (r"\bgit\s+(checkout|switch|merge|rebase|reset|stash|cherry-pick|restore)\b", "git operation that moves HEAD or discards changes"),
     (r"\bgit\s+worktree\s+(add|remove|prune)\b", "manual worktree change (crew manages these)"),
 ]
