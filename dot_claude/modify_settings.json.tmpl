@@ -48,6 +48,11 @@ SETTINGS = {
     "effortLevel": "high",
     "skipDangerousModePermissionPrompt": True,
     "statusLine": {"type": "command", "command": "~/.claude/statusline.sh", "padding": 0},
+    # The row body for each subagent in the agent panel, replacing the default
+    # "name · description · token count". Without this, those rows are Claude Code's built-in
+    # rendering and nothing here controls how they truncate. Both scripts share
+    # ~/.claude/statusline-lib.sh; neither takes `padding`, which statusLine alone supports.
+    "subagentStatusLine": {"type": "command", "command": "~/.claude/subagent-statusline.sh"},
     "worktree": {"baseRef": "head"},          # agent branches cut from your current HEAD
 
     # ---- permissions ---------------------------------------------------------------------

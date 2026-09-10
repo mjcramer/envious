@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Width and degradation tests for dot_claude/executable_statusline.sh.
+"""Width and degradation tests for both Claude Code status lines.
 
-The status line is laid out by arithmetic the script does on its own strings, so
-this harness deliberately does not reuse any of it: widths here are measured
-with unicodedata, the way a terminal measures them, and the fixtures are fed in
-as real JSON on stdin at real terminal widths.
+  dot_claude/executable_statusline.sh           the two-line status bar
+  dot_claude/executable_subagent-statusline.sh  one row per subagent
 
-The invariant under test is the one the user asked for -- the line never gets
-cut off unless there genuinely is not room -- expressed as three properties:
+Both are laid out by arithmetic the scripts do on their own strings, so this
+harness deliberately does not reuse any of it: widths here are measured with
+unicodedata, the way a terminal measures them, and the fixtures are fed in as
+real JSON on stdin at real widths.
+
+The invariant under test is the one the user asked for -- nothing gets cut off
+unless there genuinely is not room -- expressed as three properties:
 
   fits    no rendered line reaches the last column, so nothing ever wraps
   keeps   with room to spare, the agent name and the worktree directory are
@@ -30,6 +33,7 @@ import unicodedata
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
     REPO, "dot_claude", "executable_statusline.sh")
+SUBSCRIPT = os.path.join(REPO, "dot_claude", "executable_subagent-statusline.sh")
 
 # The script keeps a couple of columns for Claude Code's own spacing. Tests
 # allow anything up to the last column, so this only has to be a lower bound on
@@ -312,6 +316,240 @@ def suite():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def in_pty(cols, rows, script, stdin_text):
+    """Run a script attached to a real pty of a chosen size.
+
+    This is the only thing here that exercises the `stty size </dev/tty` branch
+    of usable_cols() -- the environment-variable tests never reach it. It is
+    also exactly what a user gets running the script by hand from a terminal.
+    """
+    import fcntl, pty, struct, termios
+
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:                                    # child
+        os.setsid()
+        fcntl.ioctl(slave, termios.TIOCSCTTY, 0)    # adopt the pty as our tty
+        os.dup2(r, 0); os.dup2(slave, 1); os.dup2(slave, 2)
+        for fd in (master, slave, r, w):
+            if fd > 2:
+                os.close(fd)
+        env = dict(os.environ, TERM="xterm-256color", HOME=HOME)
+        env.pop("COLUMNS", None)                    # a real shell exports neither
+        env.pop("LINES", None)
+        os.execve(BASH, [BASH, script], env)
+    os.close(slave); os.close(r)
+    os.write(w, stdin_text.encode()); os.close(w)
+    out = b""
+    while True:
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:                             # slave end closed
+            break
+        if not chunk:
+            break
+        out += chunk
+    os.close(master); os.waitpid(pid, 0)
+    return out.decode(errors="replace").replace("\r\n", "\n")
+
+
+def pty_suite():
+    """A real terminal, including a genuine 80-column one.
+
+    80 matters specifically: terminfo's default width is also 80, so a real
+    80-column terminal and a terminal that could not be measured used to be
+    indistinguishable. `stty` tells them apart. `tput` does not -- it is
+    measured here answering 80 at every size, which is why usable_cols() does
+    not consult it.
+    """
+    tmp = tempfile.mkdtemp(prefix="statusline-pty-")
+    probe = os.path.join(tmp, "probe.sh")
+    with open(probe, "w") as fh:
+        fh.write('echo "[$({ stty size </dev/tty; } 2>/dev/null | cut -d\' \' -f2)]'
+                 '[$(tput cols 2>/dev/null)]"\n')
+    text = json.dumps(payload(
+        agent={"name": "hardware-engineer"}, pr={"number": 148},
+        **wdir("%s/projects/mjcramer/envious.hardware-engineer" % HOME)))
+    try:
+        for cols in (80, 132, 200):
+            got = in_pty(cols, 24, probe, "").strip()
+            want = "[%d]" % cols
+            if not got.startswith(want):
+                bad("pty %d: stty reported %r, want it to start %s" % (cols, got, want))
+                continue
+            ok("pty %3d: stty reports %d, tput reports %s"
+               % (cols, cols, got[len(want):].strip("[]")))
+
+            out = in_pty(cols, 24, SCRIPT, text)
+            lines = [l for l in out.split("\n") if l]
+            if len(lines) != 2:
+                bad("pty %d: %d line(s) of output, want 2" % (cols, len(lines)))
+            elif max(viswidth(l) for l in lines) > cols - 1:
+                bad("pty %d: rendered %d columns\n        |%s|"
+                    % (cols, max(viswidth(l) for l in lines), plain(lines[0])))
+            elif min(viswidth(l) for l in lines) < cols - EDGE_SLACK:
+                bad("pty %d: rendered only %d columns, does not span the terminal"
+                    % (cols, min(viswidth(l) for l in lines)))
+            else:
+                ok("pty %3d: both lines span the terminal (%s)"
+                   % (cols, [viswidth(l) for l in lines]))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+SPECIALISTS = ["hardware-engineer", "incident-responder", "security-reviewer",
+               "system-designer", "craft-engineer", "spike-engineer",
+               "infra-engineer", "orchestrator"]
+
+
+def task(**over):
+    t = {
+        "id": "task-1", "name": "craft-engineer", "type": "craft-engineer",
+        "status": "running", "description": "extracting the shared width helpers",
+        "label": "craft", "startTime": 1757500000,
+        "model": "claude-opus-5", "effort": "high",
+        "contextWindowSize": 200000, "tokenCount": 63400,
+        "cwd": "%s/projects/mjcramer/envious.craft-engineer" % HOME,
+    }
+    t.update(over)
+    return t
+
+
+def run_sub(payload_text, cols):
+    env = dict(os.environ, HOME=HOME, TERM="xterm-ghostty")
+    env.pop("COLUMNS", None)
+    if cols is not None:
+        env["COLUMNS"] = str(cols)
+    return subprocess.run([BASH, SUBSCRIPT], input=payload_text, capture_output=True,
+                          text=True, env=env, cwd=REPO, start_new_session=True)
+
+
+def check_sub(name, tasks, cols, want_intact=True):
+    """cols is the payload's `columns`; None means the field is absent."""
+    payload = {"tasks": tasks}
+    if cols is not None:
+        payload["columns"] = cols
+    # With no `columns` and no COLUMNS in the environment the script falls back
+    # to its assumed 80 less the reserve; that is the width it must respect.
+    target = cols if cols is not None else 78
+    label = "%s @ %s" % (name, cols if cols is not None else "no columns field")
+
+    p = run_sub(json.dumps(payload), None)
+    if p.returncode != 0 or p.stderr.strip():
+        bad("%s: exit %d, stderr %s" % (label, p.returncode, p.stderr.strip()[:120]))
+        return
+
+    emitted = {}
+    for line in p.stdout.splitlines():
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            bad("%s: emitted a line that is not JSON: %r" % (label, line[:100]))
+            return
+        if set(obj) != {"id", "content"}:
+            bad("%s: row object has keys %s, want id+content" % (label, sorted(obj)))
+            return
+        if obj["id"] in emitted:
+            bad("%s: emitted id %r twice" % (label, obj["id"]))
+            return
+        emitted[obj["id"]] = obj["content"]
+
+    for t in tasks:
+        tid = t.get("id")
+        if not tid:
+            # No id means the row cannot be addressed; it must keep the default.
+            continue
+        if tid not in emitted:
+            bad("%s: task %r got no row" % (label, tid))
+            return
+        c = emitted[tid]
+        if not c:
+            bad("%s: task %r got empty content, which hides the row" % (label, tid))
+            return
+        # A row body is a single line by contract.
+        if any(ch in c for ch in "\n\r\t"):
+            bad("%s: task %r content carries a raw control character" % (label, tid))
+            return
+        w = viswidth(c)
+        # `columns` is documented as the *usable* row width, so filling it
+        # exactly is allowed here -- unlike the main line, which is measured
+        # against a whole-terminal width.
+        if w > target:
+            bad("%s: task %r row is %d columns, target %d\n        |%s|"
+                % (label, tid, w, target, plain(c)))
+            return
+        if want_intact and target >= 100:
+            if t.get("name") and t["name"] not in plain(c):
+                bad("%s: task %r lost its name with room to spare\n        |%s|"
+                    % (label, tid, plain(c)))
+                return
+            tail = (t.get("cwd") or "").rsplit("/", 1)[-1]
+            if tail and tail not in plain(c):
+                bad("%s: task %r lost its worktree name with room to spare\n        |%s|"
+                    % (label, tid, plain(c)))
+                return
+
+    ok("%s (%d row(s))" % (label, len(emitted)))
+
+
+def subagent_suite():
+    # One row per specialist, each in its own worktree -- the case that matters.
+    rows = [task(id="t%d" % i, name=a, type=a,
+                 cwd="%s/projects/mjcramer/envious.%s" % (HOME, a))
+            for i, a in enumerate(SPECIALISTS)]
+    for cols in WIDTHS:
+        check_sub("all specialists", rows, cols)
+    check_sub("all specialists", rows, None)
+
+    # A deep path, and one whose tail is not an agent worktree.
+    deep = [task(id="d1", name="system-designer", type="system-designer",
+                 cwd="%s/projects/mjcramer/envious/dot_local/private_share/"
+                     "templates/scala-pekko/src/main/scala" % HOME)]
+    for cols in WIDTHS:
+        check_sub("deep path", deep, cols)
+
+    # Fields absent or null, one at a time and all at once.
+    sparse = [
+        task(id="n1", description=None, model=None, effort=None,
+             contextWindowSize=None, tokenCount=None),
+        task(id="n2", status=None, type=None, label=None),
+        {"id": "n3", "name": "infra-engineer",
+         "cwd": "%s/projects/mjcramer/envious.infra-engineer" % HOME},
+        {"id": "n4"},
+    ]
+    for cols in WIDTHS:
+        check_sub("sparse tasks", sparse, cols, want_intact=False)
+
+    # A description carrying the characters that would break the JSON-lines
+    # contract if they reached the output.
+    nasty = [task(id="x1", description="line one\tand\nline two\r\ndone")]
+    check_sub("control chars in description", nasty, 200)
+    check_sub("control chars in description", nasty, 60)
+
+    # A task with no id keeps the default rendering and must not be emitted.
+    p = run_sub(json.dumps({"columns": 120, "tasks": [task(id=""), task(id="keep")]}), None)
+    ids = [json.loads(l)["id"] for l in p.stdout.splitlines()]
+    if ids == ["keep"]:
+        ok("task with no id is left to the default rendering")
+    else:
+        bad("task with no id: emitted %r, want ['keep']" % (ids,))
+
+    # Nothing to say means say nothing: every one of these must leave all rows
+    # at their default rendering rather than emit anything.
+    for name, text in [("malformed", "not json"), ("truncated", '{"tasks": ['),
+                       ("no tasks key", '{"columns": 120}'),
+                       ("empty tasks", '{"columns": 120, "tasks": []}'),
+                       ("empty payload", ""), ("array payload", "[1,2,3]")]:
+        p = run_sub(text, None)
+        if p.returncode == 0 and not p.stdout.strip() and not p.stderr.strip():
+            ok("%-14s payload emits nothing, exit 0" % name)
+        else:
+            bad("%s payload gave exit %d, stdout %r, stderr %r"
+                % (name, p.returncode, p.stdout[:60], p.stderr[:60]))
+
+
 # Every bash on the box, because macOS ships 3.2 at /bin/bash and that is what
 # the script has to keep working under even when a newer bash is first on PATH.
 for BASH in dedupe([shutil.which("bash"), "/bin/bash", "/usr/local/bin/bash",
@@ -319,6 +557,13 @@ for BASH in dedupe([shutil.which("bash"), "/bin/bash", "/usr/local/bin/bash",
     print("statusline layout tests (%s, %s)"
           % (os.path.relpath(SCRIPT, REPO), bash_version(BASH)))
     suite()
+    pty_suite()
+    # Skipped when an alternate main script was named on the command line, since
+    # the two are versioned together.
+    if len(sys.argv) <= 1 and os.path.exists(SUBSCRIPT):
+        print("subagent row tests (%s, %s)"
+              % (os.path.relpath(SUBSCRIPT, REPO), bash_version(BASH)))
+        subagent_suite()
 
 print("statusline layout tests: %s"
       % ("FAILED (%d)" % failures if failures else "all good"))
