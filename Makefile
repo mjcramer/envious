@@ -25,6 +25,12 @@ mac:
 chez-apply:
 	@chezmoi apply -v
 
+# Repo-local tests. These run against the chezmoi *source* files, so they can be
+# run before applying anything.
+.PHONY: test
+test:
+	@tests/statusline-test.py
+
 .PHONY: chez-delete-state
 chez-delete-state:
 	chezmoi state delete-bucket --bucket=entryState

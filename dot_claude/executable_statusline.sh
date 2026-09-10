@@ -6,17 +6,36 @@
 #   2. context window usage / cost / diff stats / rate limits
 #
 # Every field is optional: anything missing from the payload is simply omitted,
-# so this keeps working across Claude Code versions.
+# so this keeps working across Claude Code versions. When the window is too
+# narrow for everything, fields are shed in a chosen order rather than letting
+# the terminal clip whatever happens to be at the end.
+#
+# Rendering helpers are shared with subagent-statusline.sh; see statusline-lib.sh.
 
 set -uo pipefail
 
 input=$(cat)
 
-# Without jq there is nothing to parse; degrade to the bare directory.
-if ! command -v jq >/dev/null 2>&1; then
-  printf '%s\n' "${PWD}"
+# Sourced from alongside this script, wherever chezmoi put it. Without the
+# library there is nothing to render with, so fall back to the bare directory.
+LIB="${BASH_SOURCE[0]%/*}/statusline-lib.sh"
+if [[ ! -r "$LIB" ]]; then
+  printf '%s' "${PWD}"
   exit 0
 fi
+# shellcheck source=statusline-lib.sh
+. "$LIB"
+
+# Last-resort output: the directory is all we know, clipped to the end so that
+# even this cannot wrap. No trailing newline — it renders as a blank extra line.
+degrade() {
+  set_width
+  clip_head "${PWD}" "$FIT_COLS"
+  exit 0
+}
+
+# Without jq there is nothing to parse.
+command -v jq >/dev/null 2>&1 || degrade
 
 # Pull every field in one jq pass. Fields are joined with U+001F rather than
 # tabs: tab counts as IFS whitespace, so runs of empty fields would collapse
@@ -52,204 +71,151 @@ IFS=$'\x1f' read -r \
       ] | map(if . == null then "" else tostring end) | join("\u001f")' 2>/dev/null)
 
 # jq failed or gave us nothing usable.
-if [[ -z "${CUR_DIR:-}" ]]; then
-  printf '%s\n' "${PWD}"
-  exit 0
-fi
+[[ -n "${CUR_DIR:-}" ]] || degrade
 
-# ---------------------------------------------------------------- palette ---
-R=$'\e[0m'; B=$'\e[1m'; D=$'\e[2m'
-BLUE=$'\e[38;5;39m'; PURPLE=$'\e[38;5;140m'; GOLD=$'\e[38;5;215m'
-CYAN=$'\e[38;5;80m'; GREEN=$'\e[38;5;71m'; YELLOW=$'\e[38;5;179m'
-RED=$'\e[38;5;167m'; GREY=$'\e[38;5;245m'
+# This payload carries no width of its own — the docs describe a `columns` field
+# only for the subagent status line — so the environment is the only source.
+set_width
 
-SEP="${D}${GREY} │ ${R}"
-
-# ---------------------------------------------------------------- helpers ---
-
-# Round a possibly-float string to an integer. Anything non-numeric (including
-# an absent field) becomes 0, so the arithmetic below can never abort.
-to_int() {
-  local v=${1:-}
-  [[ "$v" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || { printf '0'; return; }
-  printf '%.0f' "$v"
-}
-
-# Colour by utilisation: green under 50%, amber under 80%, red above.
-pct_color() {
-  local p=$1
-  if   (( p >= 80 )); then printf '%s' "$RED"
-  elif (( p >= 50 )); then printf '%s' "$YELLOW"
-  else                     printf '%s' "$GREEN"
-  fi
-}
-
-# Compact token counts: 1234 -> 1.2k, 1234567 -> 1.2M
-fmt_tokens() {
-  local n=${1:-0}
-  if   (( n >= 1000000 )); then printf '%d.%dM' $(( n / 1000000 )) $(( (n % 1000000) / 100000 ))
-  elif (( n >= 1000 ));    then printf '%d.%dk' $(( n / 1000 ))    $(( (n % 1000) / 100 ))
-  else                          printf '%d' "$n"
-  fi
-}
-
-# A 10-cell meter for a 0-100 percentage.
-meter() {
-  local pct=$1 width=10 filled i out=''
-  (( pct < 0 )) && pct=0
-  (( pct > 100 )) && pct=100
-  filled=$(( (pct * width + 50) / 100 ))
-  for (( i = 0; i < width; i++ )); do
-    if (( i < filled )); then out+='█'; else out+='░'; fi
-  done
-  printf '%s' "$out"
-}
-
-# "resets_at" may be epoch seconds or an ISO timestamp; only handle the former
-# portably, and stay silent otherwise.
-fmt_reset() {
-  local at=${1:-} now delta
-  [[ "$at" =~ ^[0-9]+$ ]] || return 0
-  now=$(date +%s)
-  delta=$(( at - now ))
-  (( delta <= 0 )) && return 0
-  if (( delta >= 86400 )); then printf ' %dd' $(( delta / 86400 ))
-  elif (( delta >= 3600 )); then printf ' %dh' $(( delta / 3600 ))
-  else printf ' %dm' $(( delta / 60 ))
-  fi
-}
-
-# ------------------------------------------------------------ line layout ---
-# Each line is built as a left group and a right group. The right group is
-# pushed toward the right edge when the terminal width is known, so the line
-# spans the window instead of bunching against the left margin.
-
-shopt -s extglob
-
-# Visible width of a string: ANSI colour sequences contribute nothing, and the
-# two emoji we use occupy two cells each while counting as one character.
-vislen() {
-  local plain=${1//$'\e'\[*([0-9;])m/} stripped wide=0
-  stripped=${plain//⚡/}; (( wide += ${#plain} - ${#stripped} ))
-  local rest=$stripped
-  stripped=${rest//🧠/}; (( wide += ${#rest} - ${#stripped} ))
-  printf '%d' $(( ${#plain} + wide ))
-}
-
-# Terminal width, or 0 when it cannot be determined. The status line runs as a
-# subprocess, so $COLUMNS is usually absent and the controlling terminal is the
-# only reliable source.
-term_cols() {
-  local w=${COLUMNS:-}
-  if [[ ! "$w" =~ ^[0-9]+$ ]] || (( w == 0 )); then
-    # Braces matter: redirecting stdin from a missing /dev/tty is reported by
-    # the shell itself, so the whole group needs its stderr silenced.
-    w=$({ stty size </dev/tty; } 2>/dev/null | cut -d' ' -f2)
-  fi
-  if [[ ! "$w" =~ ^[0-9]+$ ]] || (( w == 0 )); then
-    w=$(tput cols 2>/dev/null)
-  fi
-  [[ "$w" =~ ^[0-9]+$ ]] || w=0
-  printf '%d' "$w"
-}
-
-COLS=$(term_cols)
-
-# Column the right group starts at when the width is unknown. Keeps the layout
-# spread out without risking a wrap on an 80-column terminal.
-FALLBACK_COL=52
-
-render() {
-  local left=$1 right=$2 lw rw gap
-  if [[ -z "$right" ]]; then printf '%s' "$left"; return; fi
-  lw=$(vislen "$left")
-  if (( COLS > 0 )); then
-    rw=$(vislen "$right")
-    gap=$(( COLS - 1 - lw - rw ))
-  else
-    gap=$(( FALLBACK_COL - lw ))
-  fi
-  (( gap < 3 )) && gap=3
-  printf '%s%*s%s' "$left" "$gap" '' "$right"
-}
+MAX_LEVEL_1=8
+MAX_LEVEL_2=6
 
 # ----------------------------------------------------------------- line 1 ---
-line1=''
 
-# Directory, shortened against $HOME.
-dir=${CUR_DIR/#$HOME/\~}
-line1+="${BLUE}${B}${dir}${R}"
-
-# Git branch, with a marker when the tree is dirty.
-if branch=$(git --no-optional-locks -C "$CUR_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null) \
-   || branch=$(git --no-optional-locks -C "$CUR_DIR" rev-parse --short HEAD 2>/dev/null); then
-  dirty=''
+# Git state is read once rather than per level: the build below runs up to
+# MAX_LEVEL_1+1 times and these are the only forks in it that touch the disk.
+BRANCH=''; DIRTY=''
+if BRANCH=$(git --no-optional-locks -C "$CUR_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null) \
+   || BRANCH=$(git --no-optional-locks -C "$CUR_DIR" rev-parse --short HEAD 2>/dev/null); then
   if [[ -n $(git --no-optional-locks -C "$CUR_DIR" status --porcelain 2>/dev/null | head -1) ]]; then
-    dirty="${YELLOW}*${R}"
+    DIRTY="${YELLOW}*${R}"
   fi
-  line1+="${SEP}${PURPLE}⎇ ${branch}${R}${dirty}"
 fi
 
-# Model, plus effort level when the model exposes one. Right group from here.
-right1=''
-if [[ -n "$MODEL" ]]; then
-  right1+="${GOLD}${B}${MODEL}${R}"
-  [[ -n "$EFFORT" ]] && right1+="${D}${GOLD}:${EFFORT}${R}"
-fi
+# Shed order, one step per level:
+#   1  directory to its last two components, branch to its last component
+#   2  output style, effort suffix
+#   3  git branch — in a worktree the directory tail already names it
+#   4  directory to its last component
+#   5  vim mode
+#   6  model name
+#   7  the ⚡ / 🧠off flags — later than the model because they are modes you
+#      set and then forget, and forgetting them changes how the session behaves
+#   8  PR number, and the directory and agent name clipped against a budget so
+#      that the line cannot overflow however narrow the window is
+build_line1() {
+  local level=$1 dir agent budget share flags=''
 
-# Mode flags.
-flags=''
-[[ "$FAST"     == "true"  ]] && flags+="${CYAN}⚡${R}"
-[[ "$THINKING" == "false" ]] && flags+="${D}${GREY}🧠off${R}"
-[[ -n "$STYLE" && "$STYLE" != "default" && "$STYLE" != "null" ]] && flags+=" ${CYAN}${STYLE}${R}"
-[[ -n "$VIM" ]] && flags+=" ${GREEN}${VIM}${R}"
-[[ -n "$AGENT" ]] && flags+=" ${PURPLE}@${AGENT}${R}"
-[[ -n "$PR" ]] && flags+=" ${BLUE}#${PR}${R}"
-if [[ -n "$flags" ]]; then
-  [[ -n "$right1" ]] && right1+="$SEP"
-  right1+="${flags# }"
-fi
+  dir=$(tilde_path "$CUR_DIR")
+  if   (( level >= 4 )); then dir=$(elide_path "$dir" 1)
+  elif (( level >= 1 )); then dir=$(elide_path "$dir" 2)
+  fi
+
+  agent=$AGENT
+  if (( level >= 8 )); then
+    budget=$(( FIT_COLS - MIN_GAP ))
+    (( budget < 4 )) && budget=4
+    if [[ -n "$agent" ]]; then
+      share=$(( budget / 2 ))
+      agent=$(clip_tail "$agent" $(( share - 1 )))   # -1 for the leading "@"
+      budget=$(( budget - share ))
+    fi
+    dir=$(clip_head "$dir" "$budget")
+  fi
+
+  LEFT="${BLUE}${B}${dir}${R}"
+  if (( level < 3 )) && [[ -n "$BRANCH" ]]; then
+    local br=$BRANCH
+    (( level >= 1 )) && br=${br##*/}
+    LEFT+="${SEP}${PURPLE}⎇ ${br}${R}${DIRTY}"
+  fi
+
+  RIGHT=''
+  if (( level < 6 )) && [[ -n "$MODEL" ]]; then
+    RIGHT+="${GOLD}${B}${MODEL}${R}"
+    if (( level < 2 )) && [[ -n "$EFFORT" ]]; then RIGHT+="${D}${GOLD}:${EFFORT}${R}"; fi
+  fi
+
+  if (( level < 7 )); then
+    [[ "$FAST"     == "true"  ]] && flags+="${CYAN}⚡${R}"
+    [[ "$THINKING" == "false" ]] && flags+="${D}${GREY}🧠off${R}"
+  fi
+  if (( level < 2 )) && [[ -n "$STYLE" && "$STYLE" != "default" && "$STYLE" != "null" ]]; then
+    flags+=" ${CYAN}${STYLE}${R}"
+  fi
+  if (( level < 5 )) && [[ -n "$VIM" ]]; then flags+=" ${GREEN}${VIM}${R}"; fi
+  if [[ -n "$agent" ]]; then flags+=" ${PURPLE}@${agent}${R}"; fi
+  if (( level < 8 )) && [[ -n "$PR" ]]; then flags+=" ${BLUE}#${PR}${R}"; fi
+
+  if [[ -n "$flags" ]]; then
+    [[ -n "$RIGHT" ]] && RIGHT+="$SEP"
+    RIGHT+="${flags# }"
+  fi
+}
 
 # ----------------------------------------------------------------- line 2 ---
-line2=''
 
-# Context window meter.
-ctx_pct=$(to_int "$CTX_PCT")
-ctx_col=$(pct_color "$ctx_pct")
-line2+="${D}${GREY}ctx${R} ${ctx_col}$(meter "$ctx_pct")${R} ${ctx_col}${ctx_pct}%"
-if (( $(to_int "$CTX_MAX") > 0 )); then
-  line2+=" ${D}${GREY}$(fmt_tokens "$(to_int "$CTX_USED")")/$(fmt_tokens "$(to_int "$CTX_MAX")")${R}"
-fi
+CTX_PCT_I=$(to_int "$CTX_PCT")
+CTX_USED_I=$(to_int "$CTX_USED")
+CTX_MAX_I=$(to_int "$CTX_MAX")
+ADDED_I=$(to_int "$ADDED")
+REMOVED_I=$(to_int "$REMOVED")
 
-# Session cost, once it rounds to something worth showing. Right group here on.
-right2=''
+COST_FMT=''
 if [[ "$COST" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-  cost_fmt=$(printf '%.2f' "$COST")
-  [[ "$cost_fmt" != "0.00" ]] && right2+="${GREEN}\$${cost_fmt}${R}"
+  COST_FMT=$(printf '%.2f' "$COST")
+  [[ "$COST_FMT" == "0.00" ]] && COST_FMT=''
 fi
 
-# Lines changed this session.
-added=$(to_int "$ADDED"); removed=$(to_int "$REMOVED")
-if (( added > 0 || removed > 0 )); then
-  [[ -n "$right2" ]] && right2+="$SEP"
-  right2+="${GREEN}+${added}${R}${D}/${R}${RED}-${removed}${R}"
-fi
+# Shed order, one step per level: the rate-limit reset suffixes, the token
+# counts, the meter, the 7-day limit, the 5-hour limit, the diff stats. Cost
+# survives everything — it is four columns and it is the number that changes
+# people's behaviour.
+build_line2() {
+  local level=$1 ctx_col p limits=''
 
-# Subscription rate limits.
-limits=''
-if [[ -n "$RL5" ]]; then
-  p=$(to_int "$RL5")
-  limits+="$(pct_color "$p")5h ${p}%$(fmt_reset "$RL5_RESET")${R}"
-fi
-if [[ -n "$RL7" ]]; then
-  p=$(to_int "$RL7")
-  [[ -n "$limits" ]] && limits+="${D}${GREY} · ${R}"
-  limits+="$(pct_color "$p")7d ${p}%$(fmt_reset "$RL7_RESET")${R}"
-fi
-if [[ -n "$limits" ]]; then
-  [[ -n "$right2" ]] && right2+="$SEP"
-  right2+="${limits}"
-fi
+  ctx_col=$(pct_color "$CTX_PCT_I")
+  LEFT="${D}${GREY}ctx${R} "
+  if (( level < 3 )); then LEFT+="${ctx_col}$(meter "$CTX_PCT_I")${R} "; fi
+  LEFT+="${ctx_col}${CTX_PCT_I}%${R}"
+  if (( level < 2 )) && (( CTX_MAX_I > 0 )); then
+    LEFT+=" ${D}${GREY}$(fmt_tokens "$CTX_USED_I")/$(fmt_tokens "$CTX_MAX_I")${R}"
+  fi
+
+  RIGHT=''
+  [[ -n "$COST_FMT" ]] && RIGHT+="${GREEN}\$${COST_FMT}${R}"
+
+  if (( level < 6 )) && (( ADDED_I > 0 || REMOVED_I > 0 )); then
+    [[ -n "$RIGHT" ]] && RIGHT+="$SEP"
+    RIGHT+="${GREEN}+${ADDED_I}${R}${D}/${R}${RED}-${REMOVED_I}${R}"
+  fi
+
+  if (( level < 5 )) && [[ -n "$RL5" ]]; then
+    p=$(to_int "$RL5")
+    limits+="$(pct_color "$p")5h ${p}%"
+    (( level < 1 )) && limits+="$(fmt_reset "$RL5_RESET")"
+    limits+="${R}"
+  fi
+  if (( level < 4 )) && [[ -n "$RL7" ]]; then
+    p=$(to_int "$RL7")
+    [[ -n "$limits" ]] && limits+="$DOT"
+    limits+="$(pct_color "$p")7d ${p}%"
+    (( level < 1 )) && limits+="$(fmt_reset "$RL7_RESET")"
+    limits+="${R}"
+  fi
+  if [[ -n "$limits" ]]; then
+    [[ -n "$RIGHT" ]] && RIGHT+="$SEP"
+    RIGHT+="${limits}"
+  fi
+}
+
+# ----------------------------------------------------------------- output ---
+LEFT=''; RIGHT=''
+
+fit build_line1 "$MAX_LEVEL_1"
+line1=$(render "$LEFT" "$RIGHT")
+fit build_line2 "$MAX_LEVEL_2"
+line2=$(render "$LEFT" "$RIGHT")
 
 # No trailing newline: it would render as an extra blank status line.
-printf '%s\n%s' "$(render "$line1" "$right1")" "$(render "$line2" "$right2")"
+printf '%s\n%s' "$line1" "$line2"
