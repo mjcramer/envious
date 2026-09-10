@@ -36,6 +36,9 @@ I work at Queue, which builds robotic vending machines that dispense prescriptio
 
 ## Formatting
 
-- **Separate process from answer.** When a turn includes tool calls or step-by-step narration, print a '\033[1;94m━━━━━━━━━━━━━━━━━━━━ FINAL ANSWER ━━━━━━━━━━━━━━━━━━━━\033[0m\n' line before the final response: everything above it is working, everything below it is the answer. Short turns with no tool calls do not need one.
+- **Separate process from answer.** When a turn includes tool calls or step-by-step narration,
+    - first precede with the line '\033[1;38;5;208m━━━━━━━━━━━━━━━━━━━━ THINKING ALOUD ━━━━━━━━━━━━━━━━━━━━\033[0m\n'
+    - then print the line '\033[1;94m━━━━━━━━━━━━━━━━━━━━ FINAL ANSWER ━━━━━━━━━━━━━━━━━━━━\033[0m\n' before the final response: everything above it is working, everything below it is the answer.
+    - Short turns with no tool calls do not need one.
 - **Lead with the conclusion.** Findings first, then reasoning. Do not make me read to the end to find out what you did or what you found.
 - Be concise. Long is not the same as thorough.
