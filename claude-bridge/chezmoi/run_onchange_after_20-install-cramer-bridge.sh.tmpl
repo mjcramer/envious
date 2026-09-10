@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+#
+# Installs cramer-bridge: the local MCP message bus shared by Claude Desktop
+# and Claude Code. Re-runs whenever server.py or requirements.txt changes.
+#
+# server.py        sha256: {{ include "dot_local/lib/cramer-bridge/server.py" | sha256sum }}
+# requirements.txt sha256: {{ include "dot_local/lib/cramer-bridge/requirements.txt" | sha256sum }}
+
+set -euo pipefail
+
+LIB_DIR="${HOME}/.local/lib/cramer-bridge"
+SERVER="${LIB_DIR}/server.py"
+VENV="${LIB_DIR}/.venv"
+VENV_PY="${VENV}/bin/python"
+DESKTOP_CONFIG="${HOME}/Library/Application Support/Claude/claude_desktop_config.json"
+
+log() { printf 'cramer-bridge: %s\n' "$1" >&2; }
+
+# --- 1. virtualenv ---------------------------------------------------------
+
+if ! command -v python3 >/dev/null 2>&1; then
+  log "python3 not found on PATH; skipping install"
+  exit 0
+fi
+
+if command -v uv >/dev/null 2>&1; then
+  log "building venv with uv"
+  uv venv --python 3.10 "${VENV}" >/dev/null
+  VIRTUAL_ENV="${VENV}" uv pip install --quiet -r "${LIB_DIR}/requirements.txt"
+else
+  log "building venv with python3 -m venv"
+  python3 -m venv "${VENV}"
+  "${VENV_PY}" -m pip install --quiet --upgrade pip
+  "${VENV_PY}" -m pip install --quiet -r "${LIB_DIR}/requirements.txt"
+fi
+
+# Fail loudly here rather than letting both clients fail to start a server
+# whose import error only shows up in their logs.
+if ! "${VENV_PY}" -c "import mcp.server.fastmcp" 2>/dev/null; then
+  log "ERROR: mcp did not import from the venv; not registering"
+  exit 1
+fi
+
+# --- 2. Claude Desktop registration ----------------------------------------
+#
+# The desktop config is also written by Claude Desktop itself (extensions,
+# connectors), so this merges one key rather than overwriting the file.
+
+if [ -d "$(dirname "${DESKTOP_CONFIG}")" ]; then
+  log "registering with Claude Desktop"
+  CONFIG_PATH="${DESKTOP_CONFIG}" VENV_PY="${VENV_PY}" SERVER_PATH="${SERVER}" python3 <<'PYTHON'
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+path = Path(os.environ["CONFIG_PATH"])
+config = {}
+
+if path.exists():
+    raw = path.read_text(encoding="utf-8").strip()
+    if raw:
+        try:
+            config = json.loads(raw)
+        except json.JSONDecodeError:
+            # Never clobber a config we cannot parse — a syntax error in this
+            # file silently disables every server, and a bad merge would hide
+            # the cause.
+            print(f"cramer-bridge: {path} is not valid JSON; leaving it alone", file=sys.stderr)
+            sys.exit(0)
+    shutil.copyfile(path, str(path) + ".bak")
+
+config.setdefault("mcpServers", {})["cramer-bridge"] = {
+    "command": os.environ["VENV_PY"],
+    "args": [os.environ["SERVER_PATH"]],
+}
+path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+path.chmod(0o600)
+print("cramer-bridge: desktop config updated (backup at .bak)", file=sys.stderr)
+PYTHON
+else
+  log "Claude Desktop config directory not found; skipping desktop registration"
+fi
+
+# --- 3. Claude Code registration -------------------------------------------
+
+if command -v claude >/dev/null 2>&1; then
+  if claude mcp get cramer-bridge >/dev/null 2>&1; then
+    log "already registered with Claude Code"
+  else
+    log "registering with Claude Code (user scope)"
+    claude mcp add --scope user --transport stdio cramer-bridge -- "${VENV_PY}" "${SERVER}"
+  fi
+else
+  log "claude CLI not found on PATH; skipping Claude Code registration"
+fi
+
+log "done — restart Claude Desktop to pick up the change"
