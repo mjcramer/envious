@@ -27,18 +27,43 @@ import sys
 # quotes around a subcommand (`gh 'pr' merge`). Anthropic's own permission docs note the
 # glob layer does not stop these either. Strip both before matching so the patterns see a
 # canonical command. Anything added here must be a *global* option that takes no subcommand.
+# A value for a git global option: single-quoted, double-quoted, or bare. Worktree paths
+# with spaces are ordinary, and `-C \S+` would swallow only the first half of one.
+_VAL = r"(?:\"[^\"]*\"|'[^']*'|\S+)"
+
+# `git -C <path> push` is the idiomatic form for working across worktrees, and it defeats
+# every \bgit\s+push\b style pattern -- as do the other global options, quoting, and line
+# continuations. Anthropic's permission globs do not see through these either. IGNORECASE
+# because the filesystem is case-insensitive here: `GIT --version` runs.
 GIT_GLOBAL_OPTS = re.compile(
-    r"\bgit\s+((?:-C\s+\S+|-c\s+\S+|--git-dir(?:=|\s+)\S+|--work-tree(?:=|\s+)\S+"
-    r"|--namespace(?:=|\s+)\S+|--exec-path(?:=|\s+)\S+|-P|--no-pager|--literal-pathspecs)\s+)+"
+    r"\bgit\s+((?:"
+    r"-C\s+" + _VAL + r"|-c\s+" + _VAL +
+    r"|--(?:git-dir|work-tree|namespace|exec-path|attr-source|super-prefix|config-env)"
+    r"(?:=|\s+)" + _VAL +
+    r"|-P|-p|--paginate|--no-pager|--bare|--no-replace-objects|--no-optional-locks"
+    r"|--no-lazy-fetch|--no-advice|--literal-pathspecs|--glob-pathspecs"
+    r"|--noglob-pathspecs|--icase-pathspecs"
+    r")\s+)+",
+    re.IGNORECASE,
 )
 
 
-def normalize(cmd: str) -> str:
-    """Canonical form of a command for pattern matching. Not a security boundary on its
-    own -- see the note in DENY_PATTERNS about what this can and cannot enforce."""
-    flat = " ".join(cmd.split())
-    flat = GIT_GLOBAL_OPTS.sub("git ", flat)
-    return flat.replace("'", "").replace('"', "")
+def normalize(cmd: str):
+    """Return (raw, stripped) forms of a command, both flattened to single spaces.
+
+    Patterns are matched against BOTH. Stripping global options is what lets
+    `git -C /x push` match a rule written as `git push`, but it also deletes evidence:
+    `git -c remote.origin.url=... push` becomes a bare `git push`, and the rule aimed at
+    repointing a remote would never see it. Matching both forms avoids trading one blind
+    spot for another.
+
+    Not a security boundary on its own -- see the note at the top of this file.
+    """
+    raw = " ".join(cmd.replace("\\\n", " ").split())
+    raw = " ".join(tok for tok in raw.split() if tok != "\\")
+    stripped = GIT_GLOBAL_OPTS.sub("git ", raw).replace("'", "").replace('"', "")
+    return raw, stripped
+
 
 DENY_PATTERNS = [
     # Terraform / OpenTofu
@@ -70,9 +95,13 @@ DENY_PATTERNS = [
     (r"\bgh\s+api\b.*/pulls/[^/\s]+/merge", "merging a pull request through the API"),
     (r"api\.github\.com.*/pulls/[^/\s]+/merge", "merging a pull request through the API"),
     (r"\bmergePullRequest\b", "merging a pull request through the GraphQL API"),
-    (r"\bgh\s+api\s+graphql\b", "gh api graphql can carry a merge mutation in a file we cannot see"),
+    # Read queries are fine; a mutation is not, and a body in a file cannot be inspected.
+    (r"\bgh\s+api\s+graphql\b.*\bmutation\b", "a GraphQL mutation can land a pull request"),
+    (r"\bgh\s+api\s+graphql\b.*--input\b", "a GraphQL body in a file cannot be inspected"),
     (r"\bgh\s+alias\s+set\b", "a gh alias can rename a denied command"),
-    (r"\bgh\s+api\b.*(branches/[^\s]*/protection|rulesets)", "branch protection is the backstop; it is not yours to change"),
+    # Only the WRITE methods. Reading protection state is how you check the backstop exists.
+    (r"\bgh\s+api\b(?=.*(branches/[^\s]*/protection|rulesets))(?=.*(?:--method|-X)\s*=?\s*(?:PUT|POST|PATCH|DELETE))",
+     "branch protection is the backstop; it is not yours to change"),
     # The guard is a file. rm/mv/truncate reach it without going through Edit, so the
     # Edit(~/.claude/**) deny does not cover them -- the docs are explicit that it does not
     # apply to subprocesses that write files indirectly.
@@ -86,6 +115,10 @@ DENY_PATTERNS = [
      "opening the agent guardrails for writing"),
     (r"\bgit\s+remote\s+(add|remove|rm|set-url|set-branches|set-head|rename)\b", "changing where this repo points"),
     (r"\bgit\s+config\b.*\bremote\.[^\s]*\.(url|pushurl)\b", "git config remote.<name>.url repoints the remote just as set-url does"),
+    # `-c remote.origin.url=...` and `--config-env=remote.origin.url=...` repoint the
+    # remote for one command without touching any config file. Matched on the raw form,
+    # since normalize() strips exactly these options away.
+    (r"\bgit\b.*\bremote\.[^\s=]*\.(url|pushurl)\s*=", "repointing the remote inline, for this command only"),
     (r"\bgit\s+config\b.*\binsteadOf\b", "an insteadOf rewrite silently redirects every push and fetch"),
     (r"\bGIT_CONFIG_KEY_\d+\s*=", "GIT_CONFIG_* env vars inject config without touching a config file"),
     (r"\bgit\s+push\b.*(--force|-f\b|\+)\s*.*\b(main|master|prod|production|release)\b", "force-push to a protected branch"),
@@ -148,10 +181,10 @@ def main() -> int:
     if payload.get("tool_name") != "Bash":
         return 0
     cmd = (payload.get("tool_input") or {}).get("command", "") or ""
-    flat = normalize(cmd)
+    raw, flat = normalize(cmd)
 
     for pattern, reason in DENY_PATTERNS:
-        if re.search(pattern, flat, re.IGNORECASE):
+        if re.search(pattern, flat, re.IGNORECASE) or re.search(pattern, raw, re.IGNORECASE):
             print(json.dumps({
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
@@ -165,7 +198,7 @@ def main() -> int:
             return 0
 
     for pattern, reason in ASK_PATTERNS:
-        if re.search(pattern, flat, re.IGNORECASE):
+        if re.search(pattern, flat, re.IGNORECASE) or re.search(pattern, raw, re.IGNORECASE):
             print(json.dumps({
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
