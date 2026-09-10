@@ -18,9 +18,16 @@ unless there genuinely is not room -- expressed as three properties:
   fills   with room to spare, the line spans the window instead of stopping at
           some fixed column
 
+"fills" only means anything if the width was found, so width_source_suite()
+pins down which source usable_cols() believes and in what order, by measurement
+rather than by inspection. `ps` is shimmed throughout so the process tree the
+scripts see is an input to the test rather than a property of the window the
+suite happens to be running in.
+
 Run:  tests/statusline-test.py [path/to/statusline.sh]
 """
 
+import contextlib
 import json
 import os
 import re
@@ -179,17 +186,74 @@ def bash_version(bash):
     return "bash %s" % (v or "?")
 
 
-def run(payload_text, cols, cwd=REPO):
+# ------------------------------------------------------------- process tree
+
+# usable_cols() asks `ps` for its ancestors' terminals, so the real process tree
+# would leak into every test: run the suite from a 240-column window and the
+# "width unknown" cases would find 240 instead of falling back. This stand-in
+# makes the tree an input. It answers only the one query the library makes.
+PS_SHIM = r"""#!/bin/sh
+# Test stand-in for ps(1): answers `ps -o ppid=,tty= -p <pid>` from
+# PS_FAKE_TABLE, which holds "pid:ppid:tty" rows separated by ";". An unknown
+# pid exits 1, the way ps does for a process that has gone; an empty table
+# therefore means no ancestor has a terminal.
+pid=
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "-p" ]; then pid=$arg; fi
+  prev=$arg
+done
+[ -n "$pid" ] || exit 1
+saved=$IFS
+set -f                      # splitting on ";" is the point; globbing is not
+IFS=';'
+# shellcheck disable=SC2086
+set -- ${PS_FAKE_TABLE:-}
+IFS=$saved
+set +f
+for row in "$@"; do
+  case $row in
+    "$pid":*) rest=${row#*:}; printf ' %s %s\n' "${rest%%:*}" "${rest#*:}"; exit 0 ;;
+  esac
+done
+exit 1
+"""
+
+_shim_dir = tempfile.mkdtemp(prefix="statusline-shim-")
+with open(os.path.join(_shim_dir, "ps"), "w") as _fh:
+    _fh.write(PS_SHIM)
+os.chmod(os.path.join(_shim_dir, "ps"), 0o755)
+
+
+def script_env(cols, ps_table=None, **over):
+    """Environment for a script run: nothing about this machine leaks in.
+
+    `ps` is shimmed, and both width overrides are cleared unless a test sets
+    them -- a CLAUDE_STATUSLINE_COLS exported in the shell running the tests
+    would otherwise silently decide every case.
+    """
     env = dict(os.environ)
     env["HOME"] = HOME
     env["TERM"] = "xterm-ghostty"
-    if cols is None:
-        env.pop("COLUMNS", None)
-    else:
+    env["PATH"] = _shim_dir + os.pathsep + env.get("PATH", "")
+    env["PS_FAKE_TABLE"] = ps_table or ""
+    env.pop("CLAUDE_STATUSLINE_COLS", None)
+    env.pop("COLUMNS", None)
+    env.pop("LINES", None)
+    if cols is not None:
         env["COLUMNS"] = str(cols)
+    for k, v in over.items():
+        if v is None:
+            env.pop(k, None)
+        else:
+            env[k] = str(v)
+    return env
+
+
+def run(payload_text, cols, cwd=REPO, env=None):
     p = subprocess.run(
         [BASH, SCRIPT], input=payload_text, capture_output=True, text=True,
-        env=env, cwd=cwd,
+        env=env if env is not None else script_env(cols), cwd=cwd,
         # Detach from the controlling terminal so /dev/tty and tput answer the
         # way they do under Claude Code, whichever way this harness was started.
         start_new_session=True,
@@ -345,9 +409,10 @@ def in_pty(cols, rows, script, stdin_text):
         for fd in (master, slave, r, w):
             if fd > 2:
                 os.close(fd)
-        env = dict(os.environ, TERM="xterm-256color", HOME=HOME)
-        env.pop("COLUMNS", None)                    # a real shell exports neither
-        env.pop("LINES", None)
+        # A real shell exports no COLUMNS, and the pty we just adopted is the
+        # only width source that should answer here -- script_env clears the
+        # override and shims `ps` so nothing else can.
+        env = script_env(None, TERM="xterm-256color")
         os.execve(BASH, [BASH, script], env)
     os.close(slave); os.close(r)
     os.write(w, stdin_text.encode()); os.close(w)
@@ -408,6 +473,141 @@ def pty_suite():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ------------------------------------------------------------- width sources
+
+# statusline-lib.sh: RESERVED_COLS, the margin taken off any *terminal* width,
+# and ASSUMED_COLS, what a line is laid out against when nothing answered. Both
+# are asserted against exactly, so a change to either belongs here too.
+RESERVED = 2
+ASSUMED = 80 - RESERVED
+
+
+@contextlib.contextmanager
+def live_pty(cols, rows=24):
+    """A pty of a chosen size, yielding its slave device's basename.
+
+    Both ends stay open for the life of the block so the device keeps existing
+    and keeps answering with the size set here. Nothing adopts it as a
+    controlling terminal -- the point is a terminal the script does *not* own,
+    reachable only through /dev, which is the shape of the Claude Code case.
+    """
+    import fcntl, pty, struct, termios
+
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    try:
+        yield os.path.basename(os.ttyname(slave))
+    finally:
+        os.close(slave)
+        os.close(master)
+
+
+def tree(*rows):
+    """A PS_FAKE_TABLE for a chain rooted at this process's child.
+
+    Each row is a terminal name (or "??" for a process without one); the walk
+    starts at the script's parent, which is this harness, so the first row is
+    what $PPID reports.
+    """
+    pids = [os.getpid()] + [900 + i for i in range(1, len(rows) + 1)]
+    return ";".join("%d:%d:%s" % (pids[i], pids[i + 1], t)
+                    for i, t in enumerate(rows))
+
+
+def width_source_suite():
+    """Which source usable_cols() believes, and in what order.
+
+    Every case pins the width by measurement rather than by inspecting the
+    script: a source was believed if and only if the line spans that width.
+    """
+    text = json.dumps(payload(
+        agent={"name": "hardware-engineer"}, pr={"number": 148},
+        **wdir("%s/projects/mjcramer/envious.hardware-engineer" % HOME)))
+
+    def widths(label, cols=None, ps_table=None, **over):
+        p = run(text, None, env=script_env(cols, ps_table, **over))
+        if p.returncode != 0 or p.stderr.strip():
+            bad("%s: exit %d, stderr %s" % (label, p.returncode, p.stderr.strip()[:120]))
+            return None
+        return [viswidth(l) for l in p.stdout.split("\n")]
+
+    def spans(label, term, **kw):
+        """The layout used `term` as the terminal width, exactly."""
+        ws = widths(label, **kw)
+        if ws is None:
+            return
+        want = term - RESERVED
+        if ws == [want, want]:
+            ok("%s -> %d columns" % (label, want))
+        else:
+            bad("%s: lines are %s columns, want both at %d (terminal %d)"
+                % (label, ws, want, term))
+
+    def unknown(label, **kw):
+        """Nothing answered: the layout stayed inside the assumed width."""
+        ws = widths(label, **kw)
+        if ws is None:
+            return
+        if max(ws) <= ASSUMED:
+            ok("%s -> falls back inside %d columns %s" % (label, ASSUMED, ws))
+        else:
+            bad("%s: lines are %s columns, want none wider than the assumed %d"
+                % (label, ws, ASSUMED))
+
+    # 1. The override is the highest-precedence source, and the only one that
+    #    works when every form of detection has failed. This is the escape
+    #    hatch: whatever else is broken, this must put the line where asked.
+    spans("override alone", 150, CLAUDE_STATUSLINE_COLS=150)
+
+    # 2. ...and it beats both of the sources that could disagree with it.
+    spans("override beats COLUMNS", 150, cols=90, CLAUDE_STATUSLINE_COLS=150)
+    with live_pty(240) as dev:
+        spans("override beats the parent's terminal", 150,
+              ps_table=tree(dev), CLAUDE_STATUSLINE_COLS=150)
+
+    # 3. A non-width override is ignored rather than obeyed or fatal, so a typo
+    #    in a shell profile degrades to normal detection.
+    for junk in ("0", "abc", "-5", "", "1e3", "12.5", " 120"):
+        spans("override %-6r ignored, COLUMNS used" % junk, 100,
+              cols=100, CLAUDE_STATUSLINE_COLS=junk)
+
+    # 4. COLUMNS=0. This is the case that was indistinguishable from unset and
+    #    is what actually arrives: bash sets COLUMNS=0 when it has no terminal,
+    #    and 0 is not a width.
+    unknown("COLUMNS=0 with no terminal anywhere", cols=0)
+    with live_pty(240) as dev:
+        spans("COLUMNS=0 defers to the parent's terminal", 240,
+              cols=0, ps_table=tree(dev))
+
+    # 5. The parent's terminal -- the route that makes this work under Claude
+    #    Code, where the status line has no terminal of its own but the process
+    #    that spawned it does.
+    for term in (100, 132, 240):
+        with live_pty(term) as dev:
+            spans("parent's terminal, %d columns" % term, term, ps_table=tree(dev))
+
+    # 6. The walk climbs past processes without a terminal (Claude Code may
+    #    spawn us through a shell) but is bounded, so a strange process tree
+    #    cannot cost a fork per ancestor all the way up to init.
+    with live_pty(180) as dev:
+        spans("terminal 4 ancestors up", 180, ps_table=tree("??", "??", "??", dev))
+        unknown("terminal 5 ancestors up is past the bound",
+                ps_table=tree("??", "??", "??", "??", dev))
+
+    # 7. Things `ps` can say that are not a usable terminal.
+    unknown("parent has no terminal (macOS '??')", ps_table=tree("??"))
+    unknown("parent has no terminal (Linux '?')", ps_table=tree("?"))
+    unknown("terminal device does not exist", ps_table=tree("ttys999"))
+    unknown("terminal name is an absolute path", ps_table=tree("/dev/tty"))
+    unknown("ps knows nothing about our parent", ps_table="")
+
+    # 8. COLUMNS still wins over the terminal when Claude Code does set it: a
+    #    version that reports a width knows better than we do how much of the
+    #    window the status line gets.
+    with live_pty(240) as dev:
+        spans("COLUMNS beats the parent's terminal", 120, cols=120, ps_table=tree(dev))
+
+
 SPECIALISTS = ["hardware-engineer", "incident-responder", "security-reviewer",
                "system-designer", "craft-engineer", "spike-engineer",
                "infra-engineer", "orchestrator"]
@@ -427,12 +627,9 @@ def task(**over):
 
 
 def run_sub(payload_text, cols):
-    env = dict(os.environ, HOME=HOME, TERM="xterm-ghostty")
-    env.pop("COLUMNS", None)
-    if cols is not None:
-        env["COLUMNS"] = str(cols)
     return subprocess.run([BASH, SUBSCRIPT], input=payload_text, capture_output=True,
-                          text=True, env=env, cwd=REPO, start_new_session=True)
+                          text=True, env=script_env(cols), cwd=REPO,
+                          start_new_session=True)
 
 
 def check_sub(name, tasks, cols, want_intact=True):
@@ -575,12 +772,15 @@ for BASH in dedupe([shutil.which("bash"), "/bin/bash", "/usr/local/bin/bash",
           % (os.path.relpath(SCRIPT, REPO), bash_version(BASH)))
     suite()
     pty_suite()
+    width_source_suite()
     # Skipped when an alternate main script was named on the command line, since
     # the two are versioned together.
     if len(sys.argv) <= 1 and os.path.exists(SUBSCRIPT):
         print("subagent row tests (%s, %s)"
               % (os.path.relpath(SUBSCRIPT, REPO), bash_version(BASH)))
         subagent_suite()
+
+shutil.rmtree(_shim_dir, ignore_errors=True)
 
 print("statusline layout tests: %s"
       % ("FAILED (%d)" % failures if failures else "all good"))

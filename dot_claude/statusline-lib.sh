@@ -10,6 +10,11 @@
 # line fits the known width, so a narrow window loses fields in an order we chose
 # rather than having its tail clipped by whatever is rendering it — and the tail
 # is where the fields that identify a session live.
+#
+# Environment:
+#   CLAUDE_STATUSLINE_COLS  terminal width in columns, overriding detection.
+#                           Export it if the line ever lays out narrower than
+#                           the window; see usable_cols() below.
 
 # ---------------------------------------------------------------- palette ---
 R=$'\e[0m'; B=$'\e[1m'; D=$'\e[2m'
@@ -160,49 +165,97 @@ fmt_reset() {
 # spacing cannot be observed from inside a script whose output is captured. Two
 # columns is a guess deliberately biased toward not wrapping: one for that
 # spacing, one so a full-width line never lands in the final cell, where a
-# terminal without deferred wrap breaks the line. tests/statusline-width-probe.sh
-# measures the real number — point `statusLine` at it for one session and read
-# the ruler. Raise this by the same amount if `padding` is ever raised.
+# terminal without deferred wrap breaks the line. statusline-width-probe.sh next
+# to this file measures the real number — point `statusLine` at it for one
+# session and read the ruler. Raise this by the same amount if `padding` is ever
+# raised.
 RESERVED_COLS=2
 
 # What to lay out against when the width cannot be measured at all. Assuming
 # more than the window has is exactly what clips the end of a line, so assume
 # the classic 80 — less the same margin, since 80 is a terminal width like the
-# measured ones.
+# measured ones. It is a floor, not a guess at this terminal: raising it would
+# just trade one wrong constant for another. Set CLAUDE_STATUSLINE_COLS if
+# detection ever fails on a wide window.
 ASSUMED_COLS=$(( 80 - RESERVED_COLS ))
+
+# How far up the process tree to look for a terminal. The status line is a
+# grandchild of Claude Code at worst (a shell wrapper, then Claude Code itself),
+# so this only has to clear a couple of levels; the bound is what stops a
+# surprising process tree from costing a fork per ancestor all the way to init.
+ANCESTOR_DEPTH=4
+
+# Terminal width from the nearest ancestor process that has a controlling
+# terminal, or empty. This is the only source that works under Claude Code.
+#
+# We have no terminal of our own, but the process that spawned us does, and its
+# device is readable: `stty size < /dev/ttys000` answers with the live window
+# size. Opening it cannot steal it — a terminal that is already some other
+# session's controlling terminal is never adopted as ours — and `stty` only
+# issues an ioctl, so there is no read to raise SIGTTIN either.
+#
+# One `ps` per level, which is also what advances the walk: each answer carries
+# the parent to try next as well as this level's terminal, so finding a terminal
+# at the first level costs a single fork.
+ancestor_cols() {
+  local pid=$1 depth=$ANCESTOR_DEPTH line next tty w
+  while (( depth > 0 )) && [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )); do
+    line=$(ps -o ppid=,tty= -p "$pid" 2>/dev/null) || return
+    [[ -n "$line" ]] || return
+    read -r next tty <<<"$line"
+    # No terminal is reported as "?" (Linux) or "??" (macOS); a real one is a
+    # device name under /dev, relative and never absolute ("ttys000", "pts/3").
+    if [[ "$tty" =~ ^[a-zA-Z][a-zA-Z0-9/]*$ ]] && [[ -r "/dev/$tty" ]]; then
+      w=$({ stty size < "/dev/$tty"; } 2>/dev/null | cut -d' ' -f2)
+      if [[ "$w" =~ ^[0-9]+$ ]] && (( w > 0 )); then printf '%s' "$w"; return; fi
+    fi
+    pid=$next
+    depth=$(( depth - 1 ))
+  done
+}
 
 # Usable width for one line, or 0 when it cannot be determined.
 #
-# Claude Code captures our stdout rather than attaching us to the terminal, and
-# the docs are explicit that "tput cols and language-level width detection
-# cannot read the terminal size from inside the script. Read the COLUMNS and
-# LINES environment variables instead."
+# The docs say Claude Code sets COLUMNS and LINES for the status line and that
+# "tput cols and language-level width detection cannot read the terminal size
+# from inside the script". Measured on 2.1.267 the first half of that is not
+# true: COLUMNS arrives as 0 — bash's own value for "no terminal", not something
+# Claude Code exported — and nothing else in the environment carries a width
+# either. Believing that 0 is what parked this layout at the assumed 80 on a
+# 239-column window.
 #
-# tput is not consulted at all. Measured on 2.1.267, a process Claude Code spawns
-# for a tool call has no COLUMNS or LINES in its environment and no controlling
-# terminal, and `tput cols` answers 80 on a much wider window — that 80 is
-# terminfo's default for a terminal it could not size, and believing it is what
-# pinned this layout to 80 columns. A wrong width is worse than no width: no
-# width lays out conservatively, a wrong one overflows and gets clipped.
+# tput is not consulted at all: with no terminal it answers terminfo's default
+# of 80 whatever the real size is, and a wrong width is worse than no width. No
+# width lays out conservatively; a wrong one overflows and gets clipped.
 #
-# Whether the status-line invocation specifically gets a real COLUMNS is not
-# something a script run any other way can observe. If the line still does not
-# span the window, tests/statusline-width-probe.sh answers it in one session.
+# Sources, best first. Each is a *terminal* width, so the same margin comes off
+# whichever one answered.
 usable_cols() {
   local w=''
 
-  # 1. What the docs say Claude Code sets for us. Some shells export a literal
-  #    0 when they have no terminal, which is not a width.
-  if [[ "${COLUMNS:-}" =~ ^[0-9]+$ ]] && (( COLUMNS > 0 )); then
+  # 1. Explicit override. Detection has been wrong before on this path, and this
+  #    is the one source that cannot be: export CLAUDE_STATUSLINE_COLS=<n> and
+  #    the layout uses n columns regardless of what anything else reports.
+  if [[ "${CLAUDE_STATUSLINE_COLS:-}" =~ ^[0-9]+$ ]] && (( CLAUDE_STATUSLINE_COLS > 0 )); then
+    w=$CLAUDE_STATUSLINE_COLS
+
+  # 2. What the docs say Claude Code sets for us. Kept ahead of the terminal
+  #    because a future version that really does set it knows better than we do
+  #    how much of the window the status line gets. A literal 0 is not a width.
+  elif [[ "${COLUMNS:-}" =~ ^[0-9]+$ ]] && (( COLUMNS > 0 )); then
     w=$COLUMNS
+
   else
-    # 2. The controlling terminal, for when this is run by hand from a shell.
-    #    Braces matter: redirecting stdin from a missing /dev/tty is reported by
-    #    the shell itself, so the whole group needs its stderr silenced.
+    # 3. Our own controlling terminal, for when this is run by hand from a
+    #    shell. Braces matter: redirecting stdin from a missing /dev/tty is
+    #    reported by the shell itself, so the whole group needs stderr silenced.
     w=$({ stty size </dev/tty; } 2>/dev/null | cut -d' ' -f2)
+
+    # 4. Failing that, the terminal of whoever spawned us — the Claude Code case.
+    [[ "$w" =~ ^[0-9]+$ ]] || w=$(ancestor_cols "$PPID")
   fi
 
-  # 3. Give up, and let the caller lay out for ASSUMED_COLS.
+  # 5. Give up, and let the caller lay out for ASSUMED_COLS.
   if [[ ! "$w" =~ ^[0-9]+$ ]] || (( w <= RESERVED_COLS )); then
     printf '0'
     return

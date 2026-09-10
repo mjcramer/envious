@@ -25,11 +25,11 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 # The payload carries `columns`, documented as the usable row width — already
 # net of whatever the panel spends on its own framing, so it is used as-is with
-# no margin subtracted. Absent (older Claude Code), the environment is the only
-# source, and it will almost certainly say "unknown": a panel row is narrower
-# than the terminal, so ASSUMED_COLS is an over-estimate there rather than a
-# safe one. Nothing better is available; the degradation below is what keeps
-# that from being a disaster.
+# no margin subtracted. Absent (older Claude Code), set_width falls back to the
+# terminal, which is an over-estimate for a panel row rather than a safe under-
+# estimate: a row is inset by the panel's framing. Nothing better is available
+# without a `columns` field, and the degradation below is what keeps an
+# over-estimate from being a disaster.
 set_width "$(printf '%s' "$input" | jq -r '.columns // "" | tostring' 2>/dev/null)"
 
 # Field order must match the read loop below. Newlines and tabs are squashed to
