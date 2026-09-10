@@ -10,7 +10,15 @@
 # narrow for everything, fields are shed in a chosen order rather than letting
 # the terminal clip whatever happens to be at the end.
 #
+# Environment:
+#   CLAUDE_STATUSLINE_COLS  terminal width in columns. Overrides every form of
+#                           detection; export it if the line lays out narrower
+#                           than the window (`set -x CLAUDE_STATUSLINE_COLS 200`
+#                           in fish, and restart Claude Code so it inherits it).
+#
 # Rendering helpers are shared with subagent-statusline.sh; see statusline-lib.sh.
+# statusline-width-probe.sh, alongside both, reports what any given invocation
+# can actually see.
 
 set -uo pipefail
 
