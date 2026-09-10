@@ -241,6 +241,15 @@ def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None,
             bad("%s: dropped the agent name with %d columns to spare\n        |%s|"
                 % (label, target, plain(lines[0])))
             return
+    # Too narrow to keep the whole path: what has to survive is its *end*.
+    # "…hardware-engineer" says which worktree this is, "envious.…" does not,
+    # and this is the only thing asserting the direction of that last-resort
+    # clip -- every other check runs at a width where nothing gets clipped.
+    if want_tail and target < 60 and len(want_tail) >= 8:
+        if want_tail[-8:] not in plain(lines[0]):
+            bad("%s: clipped the directory from the wrong end\n        |%s|"
+                % (label, plain(lines[0])))
+            return
     if want_tail and target >= 100:
         if want_tail not in plain(lines[0]):
             bad("%s: dropped the worktree name with %d columns to spare\n        |%s|"
@@ -488,6 +497,14 @@ def check_sub(name, tasks, cols, want_intact=True):
             tail = (t.get("cwd") or "").rsplit("/", 1)[-1]
             if tail and tail not in plain(c):
                 bad("%s: task %r lost its worktree name with room to spare\n        |%s|"
+                    % (label, tid, plain(c)))
+                return
+        # Same as the main line: when the path has to be clipped, the end of it
+        # is what identifies the worktree, so that is the end that must survive.
+        if target < 60:
+            tail = (t.get("cwd") or "").rsplit("/", 1)[-1]
+            if len(tail) >= 8 and tail[-8:] not in plain(c):
+                bad("%s: task %r clipped the directory from the wrong end\n        |%s|"
                     % (label, tid, plain(c)))
                 return
 
