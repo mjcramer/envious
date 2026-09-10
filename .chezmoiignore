@@ -2,6 +2,10 @@ README.md
 CLAUDE.md
 Makefile
 
+# Repo-local tests, not deployed targets. Run them with `make test`.
+tests
+tests/**
+
 
 # cramer-bridge is a delivery bundle staged here, not a managed target. Its
 # chezmoi/ subdir is meant to be copied into the source root (see its README).
