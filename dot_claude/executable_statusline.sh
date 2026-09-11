@@ -15,6 +15,10 @@
 #                           detection; export it if the line lays out narrower
 #                           than the window (`set -x CLAUDE_STATUSLINE_COLS 200`
 #                           in fish, and restart Claude Code so it inherits it).
+#   CLAUDE_STATUSLINE_RIGHT_MARGIN
+#                           columns kept free at the right for Claude Code's own
+#                           notifications. Defaults to a quarter of the window,
+#                           at most 48; raise it if a notice still covers text.
 #
 # Rendering helpers are shared with subagent-statusline.sh; see statusline-lib.sh.
 # statusline-width-probe.sh, alongside both, reports what any given invocation
@@ -221,9 +225,17 @@ build_line2() {
 LEFT=''; RIGHT=''
 
 fit build_line1 "$MAX_LEVEL_1"
-line1=$(render "$LEFT" "$RIGHT")
+LEFT1=$LEFT; RIGHT1=$RIGHT
 fit build_line2 "$MAX_LEVEL_2"
-line2=$(render "$LEFT" "$RIGHT")
+LEFT2=$LEFT; RIGHT2=$RIGHT
+
+# The right groups share a column just past the longer left group instead of
+# being pushed out to the detected edge: the right of this row is where Claude
+# Code draws its notifications, so the edge is exactly where text gets covered.
+# The widths only decide what gets shed; they do not decide where things go.
+COL=$(right_col "$LEFT1" "$LEFT2")
+line1=$(render "$LEFT1" "$RIGHT1" "$COL")
+line2=$(render "$LEFT2" "$RIGHT2" "$COL")
 
 # No trailing newline: it would render as an extra blank status line.
 printf '%s\n%s' "$line1" "$line2"

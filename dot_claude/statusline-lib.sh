@@ -12,9 +12,14 @@
 # is where the fields that identify a session live.
 #
 # Environment:
-#   CLAUDE_STATUSLINE_COLS  terminal width in columns, overriding detection.
-#                           Export it if the line ever lays out narrower than
-#                           the window; see usable_cols() below.
+#   CLAUDE_STATUSLINE_COLS          terminal width in columns, overriding
+#                                   detection. Export it if the line ever lays
+#                                   out narrower than the window; see
+#                                   usable_cols() below.
+#   CLAUDE_STATUSLINE_RIGHT_MARGIN  columns kept free at the right of the row
+#                                   for Claude Code's own notifications; see
+#                                   notice_margin() below. 0 lays out to the
+#                                   edge.
 
 # ---------------------------------------------------------------- palette ---
 R=$'\e[0m'; B=$'\e[1m'; D=$'\e[2m'
@@ -171,13 +176,46 @@ fmt_reset() {
 # raised.
 RESERVED_COLS=2
 
+# Room kept free at the right of the row for Claude Code's own notifications,
+# which the docs say share the status line's row: "System notifications like MCP
+# server errors and auto-updates display on the right side of the row. Transient
+# notifications such as the context-low warning also cycle through this area",
+# verbose mode adds a token counter there, and "these notifications may truncate
+# your status line output". Their width is not documented and varies with the
+# message, so a full-width layout ends up with its tail under whichever one is
+# showing. That was the clipped right group once the real terminal width
+# started being detected.
+#
+# The default is a quarter of the terminal, capped at NOTICE_MARGIN_MAX: that
+# clears the longest notices (the context-low warning is around 40 columns)
+# on a wide window without starving a narrow one. On a narrow window a notice
+# wins anyway, per the docs, so a larger margin there would only cost fields.
+# CLAUDE_STATUSLINE_RIGHT_MARGIN overrides it, and 0 lays out to the edge.
+# Whatever the source, at most half of what is left after RESERVED_COLS is
+# given away, so a large value cannot leave the line nothing to lay out in.
+NOTICE_MARGIN_MAX=48
+
+# Columns to keep free for notifications on a terminal <term> columns wide.
+notice_margin() {
+  local term=$1 m
+  if [[ "${CLAUDE_STATUSLINE_RIGHT_MARGIN:-}" =~ ^[0-9]+$ ]]; then
+    m=$(( 10#$CLAUDE_STATUSLINE_RIGHT_MARGIN ))
+  else
+    m=$(( term / 4 ))
+    (( m > NOTICE_MARGIN_MAX )) && m=$NOTICE_MARGIN_MAX
+  fi
+  (( m > (term - RESERVED_COLS) / 2 )) && m=$(( (term - RESERVED_COLS) / 2 ))
+  (( m < 0 )) && m=0
+  printf '%d' "$m"
+}
+
 # What to lay out against when the width cannot be measured at all. Assuming
 # more than the window has is exactly what clips the end of a line, so assume
-# the classic 80 — less the same margin, since 80 is a terminal width like the
+# the classic 80 — less the same margins, since 80 is a terminal width like the
 # measured ones. It is a floor, not a guess at this terminal: raising it would
 # just trade one wrong constant for another. Set CLAUDE_STATUSLINE_COLS if
 # detection ever fails on a wide window.
-ASSUMED_COLS=$(( 80 - RESERVED_COLS ))
+ASSUMED_COLS=$(( 80 - RESERVED_COLS - $(notice_margin 80) ))
 
 # How far up the process tree to look for a terminal. The status line is a
 # grandchild of Claude Code at worst (a shell wrapper, then Claude Code itself),
@@ -228,8 +266,8 @@ ancestor_cols() {
 # of 80 whatever the real size is, and a wrong width is worse than no width. No
 # width lays out conservatively; a wrong one overflows and gets clipped.
 #
-# Sources, best first. Each is a *terminal* width, so the same margin comes off
-# whichever one answered.
+# Sources, best first. Each is a *terminal* width, so the same margins
+# (RESERVED_COLS and notice_margin) come off whichever one answered.
 usable_cols() {
   local w=''
 
@@ -260,7 +298,7 @@ usable_cols() {
     printf '0'
     return
   fi
-  printf '%d' $(( w - RESERVED_COLS ))
+  printf '%d' $(( w - RESERVED_COLS - $(notice_margin "$w") ))
 }
 
 # Set COLS (measured usable width, 0 if unknown) and FIT_COLS (what to lay out
@@ -302,10 +340,34 @@ fit() {
   done
 }
 
+# Column at which to start the right groups of several lines rendered together,
+# given their left groups: just past the widest one. Starting there rather than
+# at the right edge is what keeps the layout from depending on the edge being
+# where we measured it — the one number here we cannot confirm — and it puts
+# the right groups of a multi-line status in one column.
+right_col() {
+  local left lw col=0
+  for left in "$@"; do
+    lw=$(vislen "$left")
+    (( lw > col )) && col=$lw
+  done
+  printf '%d' $(( col + MIN_GAP ))
+}
+
+# Join a line's two groups. With a <col> (from right_col) the right group starts
+# there, pulled left when that would carry it past FIT_COLS; without one it is
+# pushed out to FIT_COLS. Either way the gap never drops below MIN_GAP.
 render() {
-  local left=$1 right=$2 lw rw gap
+  local left=$1 right=$2 col=${3:-} lw rw gap
   if [[ -z "$right" ]]; then printf '%s' "$left"; return; fi
   lw=$(vislen "$left"); rw=$(vislen "$right")
+  if [[ -n "$col" ]]; then
+    (( col + rw > FIT_COLS )) && col=$(( FIT_COLS - rw ))
+    gap=$(( col - lw ))
+    (( gap < MIN_GAP )) && gap=$MIN_GAP
+    printf '%s%*s%s' "$left" "$gap" '' "$right"
+    return
+  fi
   gap=$(( FIT_COLS - lw - rw ))
   # With no measured width, spread to the fallback column rather than out to an
   # edge we are guessing at, but never further than the assumed width allows.

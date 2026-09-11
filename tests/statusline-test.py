@@ -12,17 +12,19 @@ real JSON on stdin at real widths.
 The invariant under test is the one the user asked for -- nothing gets cut off
 unless there genuinely is not room -- expressed as three properties:
 
-  fits    no rendered line reaches the last column, so nothing ever wraps
-  keeps   with room to spare, the agent name and the worktree directory are
-          present in full (they are what say *which* agent and *which* checkout)
-  fills   with room to spare, the line spans the window instead of stopping at
-          some fixed column
+  fits     no rendered line reaches into the right of the row, where Claude
+           Code draws its notifications over whatever is there, nor into the
+           last column, where a line wraps
+  keeps    with room to spare, the agent name and the worktree directory are
+           present in full (they are what say *which* agent and *which* checkout)
+  aligned  with room to spare, both right groups start in one column just past
+           the longer left group -- not out at an edge that is only as good as
+           the width detection that found it
 
-"fills" only means anything if the width was found, so width_source_suite()
-pins down which source usable_cols() believes and in what order, by measurement
-rather than by inspection. `ps` is shimmed throughout so the process tree the
-scripts see is an input to the test rather than a property of the window the
-suite happens to be running in.
+width_source_suite() pins down which source usable_cols() believes, in what
+order, and what margins come off it, by calling it directly. `ps` is shimmed
+throughout so the process tree the scripts see is an input to the test rather
+than a property of the window the suite happens to be running in.
 
 Run:  tests/statusline-test.py [path/to/statusline.sh]
 """
@@ -41,11 +43,31 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
     REPO, "dot_claude", "executable_statusline.sh")
 SUBSCRIPT = os.path.join(REPO, "dot_claude", "executable_subagent-statusline.sh")
+LIB = os.path.join(REPO, "dot_claude", "statusline-lib.sh")
 
-# The script keeps a couple of columns for Claude Code's own spacing. Tests
-# allow anything up to the last column, so this only has to be a lower bound on
-# how close to the edge "fills the window" means.
-EDGE_SLACK = 4
+# statusline-lib.sh: RESERVED_COLS, the margin taken off any *terminal* width;
+# notice_margin(), the room kept free at the right of the row for Claude Code's
+# notifications; and ASSUMED_COLS, what a line is laid out against when nothing
+# answered. All are asserted against exactly, so a change to any belongs here.
+RESERVED = 2
+NOTICE_MAX = 48
+
+
+def notice(term):
+    return min(term // 4, NOTICE_MAX, (term - RESERVED) // 2)
+
+
+def layout(term):
+    """Columns a line may use on a terminal `term` wide."""
+    return term - RESERVED - notice(term)
+
+
+ASSUMED = layout(80)
+
+# The smallest gap between a line's two groups (MIN_GAP in the library), and so
+# the run of spaces that marks where the right group starts.
+MIN_GAP = 3
+GAP = re.compile(r" {%d,}" % MIN_GAP)
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -76,6 +98,41 @@ def viswidth(s):
 
 def plain(s):
     return ANSI.sub("", s)
+
+
+def groups(line):
+    """(left width, column the right group starts at), or None with no gap.
+
+    Fields inside a group are joined by single spaces, so the only run of
+    MIN_GAP or more is the gap between the groups.
+    """
+    p = plain(line)
+    m = GAP.search(p)
+    if not m:
+        return None
+    return viswidth(p[:m.start()]), viswidth(p[:m.end()])
+
+
+def alignment_error(lines, limit):
+    """Why these lines' right groups are not in one column just past the
+    longer left group, or None when they are.
+
+    A right group too wide to start there without passing `limit` is pulled
+    left instead, and must then end exactly at `limit` -- no earlier, since
+    that would be misaligned for nothing, and no later, since that is clipping.
+    """
+    split = [groups(l) for l in lines]
+    if any(s is None for s in split):
+        return "a line has no right group: %r" % [plain(l) for l in lines]
+    want = max(lw for lw, _ in split) + MIN_GAP
+    for (_, col), line in zip(split, lines):
+        if col == want:
+            continue
+        if col < want and viswidth(line) == limit:
+            continue
+        return ("right groups start at columns %s, want %d (or pulled left to end at %d)"
+                % ([c for _, c in split], want, limit))
+    return None
 
 
 # ------------------------------------------------------------------ fixtures
@@ -262,7 +319,7 @@ def run(payload_text, cols, cwd=REPO, env=None):
 
 
 def has_right_group(obj):
-    """True when line 2 has something to push to the right edge at all."""
+    """True when line 2 has a right group at all."""
     cost = obj.get("cost") or {}
     if cost.get("total_cost_usd") or cost.get("total_lines_added") \
             or cost.get("total_lines_removed"):
@@ -271,7 +328,7 @@ def has_right_group(obj):
 
 
 def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None,
-          want_fill=True):
+          want_aligned=True):
     target = cols if cols is not None else 80  # unknown width assumes 80
     p = run(payload_text, cols)
     label = "%s @ %s" % (name, cols if cols is not None else "unknown")
@@ -293,11 +350,11 @@ def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None,
 
     for i, line in enumerate(lines, 1):
         w = viswidth(line)
-        # Reaching the final column is enough to wrap on a terminal without
-        # deferred wrap, so the last column is out of bounds too.
-        if w > target - 1:
-            bad("%s: line %d is %d columns wide, target %d\n        |%s|"
-                % (label, i, w, target, plain(line)))
+        # The right of the row belongs to Claude Code's notifications, and
+        # reaching the final column wraps on a terminal without deferred wrap.
+        if w > layout(target):
+            bad("%s: line %d is %d columns wide, limit %d of %d\n        |%s|"
+                % (label, i, w, layout(target), target, plain(line)))
             return
 
     if want_agent and target >= 100:
@@ -320,11 +377,11 @@ def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None,
                 % (label, target, plain(lines[0])))
             return
 
-    if target >= 100 and expect_two and want_fill:
-        w = viswidth(lines[1])
-        if w < target - EDGE_SLACK:
-            bad("%s: line 2 stops at column %d of %d instead of spanning the window"
-                % (label, w, target))
+    if target >= 100 and expect_two and want_aligned:
+        why = alignment_error(lines, layout(target))
+        if why:
+            bad("%s: %s\n        |%s|\n        |%s|"
+                % (label, why, plain(lines[0]), plain(lines[1])))
             return
 
     ok(label)
@@ -338,10 +395,12 @@ def suite():
             if isinstance(obj.get("agent"), dict) else None
         cur = (obj.get("workspace") or {}).get("current_dir") or obj.get("cwd") or ""
         tail = cur.rsplit("/", 1)[-1] if cur else None
-        fill = has_right_group(obj)
+        # Line 1 always has a right group in these fixtures (the model); line
+        # 2 only when there is cost or a rate limit to show.
+        aligned = has_right_group(obj) and bool((obj.get("model") or {}).get("display_name"))
         for cols in WIDTHS + [None]:
             check(name, text, cols, expect_two, want_agent=agent, want_tail=tail,
-                  want_fill=fill)
+                  want_aligned=aligned)
 
     # 2. A payload jq cannot parse must still leave a usable status line.
     for junk in ["", "not json", '{"workspace": ', "[1,2,3]"]:
@@ -376,9 +435,9 @@ def suite():
             p = run(text, cols, cwd=repo)
             lines = p.stdout.split("\n")
             widths = [viswidth(l) for l in lines]
-            if max(widths) > target - 1:
-                bad("dirty agent worktree @ %s: %d columns wide, target %d\n        |%s|"
-                    % (cols, max(widths), target, plain(lines[0])))
+            if max(widths) > layout(target):
+                bad("dirty agent worktree @ %s: %d columns wide, limit %d\n        |%s|"
+                    % (cols, max(widths), layout(target), plain(lines[0])))
             elif target >= 120 and "@hardware-engineer" not in plain(lines[0]):
                 bad("dirty agent worktree @ %s: lost the agent name\n        |%s|"
                     % (cols, plain(lines[0])))
@@ -460,26 +519,20 @@ def pty_suite():
             lines = [l for l in out.split("\n") if l]
             if len(lines) != 2:
                 bad("pty %d: %d line(s) of output, want 2" % (cols, len(lines)))
-            elif max(viswidth(l) for l in lines) > cols - 1:
-                bad("pty %d: rendered %d columns\n        |%s|"
-                    % (cols, max(viswidth(l) for l in lines), plain(lines[0])))
-            elif min(viswidth(l) for l in lines) < cols - EDGE_SLACK:
-                bad("pty %d: rendered only %d columns, does not span the terminal"
-                    % (cols, min(viswidth(l) for l in lines)))
+            elif max(viswidth(l) for l in lines) > layout(cols):
+                bad("pty %d: rendered %d columns, limit %d\n        |%s|"
+                    % (cols, max(viswidth(l) for l in lines), layout(cols),
+                       plain(lines[0])))
+            elif cols >= 100 and alignment_error(lines, layout(cols)):
+                bad("pty %d: %s" % (cols, alignment_error(lines, layout(cols))))
             else:
-                ok("pty %3d: both lines span the terminal (%s)"
+                ok("pty %3d: both lines fit and align (%s)"
                    % (cols, [viswidth(l) for l in lines]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ------------------------------------------------------------- width sources
-
-# statusline-lib.sh: RESERVED_COLS, the margin taken off any *terminal* width,
-# and ASSUMED_COLS, what a line is laid out against when nothing answered. Both
-# are asserted against exactly, so a change to either belongs here too.
-RESERVED = 2
-ASSUMED = 80 - RESERVED
 
 
 @contextlib.contextmanager
@@ -514,45 +567,47 @@ def tree(*rows):
                     for i, t in enumerate(rows))
 
 
-def width_source_suite():
-    """Which source usable_cols() believes, and in what order.
+def usable(label, cols=None, ps_table=None, **over):
+    """What usable_cols() answers in a given environment, or None on error.
 
-    Every case pins the width by measurement rather than by inspecting the
-    script: a source was believed if and only if the line spans that width.
+    Called directly rather than read off a rendered line: the line no longer
+    stretches to the width it was given, so its length does not reveal it.
     """
-    text = json.dumps(payload(
-        agent={"name": "hardware-engineer"}, pr={"number": 148},
-        **wdir("%s/projects/mjcramer/envious.hardware-engineer" % HOME)))
+    p = subprocess.run([BASH, "-c", '. "$1" && usable_cols', "usable", LIB],
+                       capture_output=True, text=True, cwd=REPO,
+                       env=script_env(cols, ps_table, **over),
+                       start_new_session=True)
+    if p.returncode != 0 or p.stderr.strip() or not p.stdout.isdigit():
+        bad("%s: exit %d, stdout %r, stderr %s"
+            % (label, p.returncode, p.stdout[:40], p.stderr.strip()[:120]))
+        return None
+    return int(p.stdout)
 
-    def widths(label, cols=None, ps_table=None, **over):
-        p = run(text, None, env=script_env(cols, ps_table, **over))
-        if p.returncode != 0 or p.stderr.strip():
-            bad("%s: exit %d, stderr %s" % (label, p.returncode, p.stderr.strip()[:120]))
-            return None
-        return [viswidth(l) for l in p.stdout.split("\n")]
 
-    def spans(label, term, **kw):
-        """The layout used `term` as the terminal width, exactly."""
-        ws = widths(label, **kw)
-        if ws is None:
+def width_source_suite():
+    """Which source usable_cols() believes, and in what order."""
+
+    def spans(label, term, want=None, **kw):
+        """usable_cols() took `term` as the terminal width, less the margins."""
+        want = layout(term) if want is None else want
+        got = usable(label, **kw)
+        if got is None:
             return
-        want = term - RESERVED
-        if ws == [want, want]:
+        if got == want:
             ok("%s -> %d columns" % (label, want))
         else:
-            bad("%s: lines are %s columns, want both at %d (terminal %d)"
-                % (label, ws, want, term))
+            bad("%s: usable_cols gave %d, want %d (terminal %d)"
+                % (label, got, want, term))
 
     def unknown(label, **kw):
-        """Nothing answered: the layout stayed inside the assumed width."""
-        ws = widths(label, **kw)
-        if ws is None:
+        """Nothing answered, so the caller falls back to ASSUMED_COLS."""
+        got = usable(label, **kw)
+        if got is None:
             return
-        if max(ws) <= ASSUMED:
-            ok("%s -> falls back inside %d columns %s" % (label, ASSUMED, ws))
+        if got == 0:
+            ok("%s -> unknown" % label)
         else:
-            bad("%s: lines are %s columns, want none wider than the assumed %d"
-                % (label, ws, ASSUMED))
+            bad("%s: usable_cols gave %d, want 0 (unknown)" % (label, got))
 
     # 1. The override is the highest-precedence source, and the only one that
     #    works when every form of detection has failed. This is the escape
@@ -607,6 +662,64 @@ def width_source_suite():
     with live_pty(240) as dev:
         spans("COLUMNS beats the parent's terminal", 120, cols=120, ps_table=tree(dev))
 
+    # 9. The notification margin. Its default scales with the window and is
+    #    capped; the override replaces it outright, 0 included, and a value
+    #    that is not a count falls back to the default rather than failing.
+    for term, want in ((40, 10), (80, 20), (120, 30), (192, 48), (239, 48)):
+        spans("default margin at %d is %d" % (term, want), term,
+              want=term - RESERVED - want, CLAUDE_STATUSLINE_COLS=term)
+    spans("margin 0 lays out to the edge", 239, want=239 - RESERVED,
+          CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN=0)
+    spans("margin 60 is taken as given", 239, want=239 - RESERVED - 60,
+          CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN=60)
+    spans("margin '010' is ten, not octal", 239, want=239 - RESERVED - 10,
+          CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN="010")
+    # Never more than half of what is left, so the line keeps somewhere to go.
+    spans("margin 500 is capped at half", 100, want=(100 - RESERVED + 1) // 2,
+          CLAUDE_STATUSLINE_COLS=100, CLAUDE_STATUSLINE_RIGHT_MARGIN=500)
+    for junk in ("abc", "-5", "", " 10", "1.5"):
+        spans("margin %-5r ignored, default used" % junk, 239,
+              CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN=junk)
+
+
+def overreach_suite():
+    """The reported bug: a width that is right about the terminal and wrong
+    about the row.
+
+    stty on the parent's terminal answers 239, and it is correct -- but the
+    right of that row is where Claude Code draws its notifications, so text
+    laid out to column 237 ends under one of them. Here a notice of NOTICE
+    columns is taken to be showing, and every line must end before it.
+
+    Only from 160 columns up, where the default margin (a quarter of the
+    window) is at least NOTICE. Below that the margin is smaller by design:
+    the docs say a notice truncates a narrow status line whatever it does, and
+    reserving the full width of the longest one there would cost fields on
+    every render to save text during the rare ones.
+    """
+    NOTICE = 40      # about the context-low warning, the longest documented
+    text = json.dumps(payload(
+        agent={"name": "incident-responder"}, vim={"mode": "NORMAL"},
+        pr={"number": 148}, output_style={"name": "Explanatory"},
+        **wdir("%s/projects/mjcramer/envious.incident-responder" % HOME)))
+    for term in (160, 239):
+        with live_pty(term) as dev:
+            p = run(text, None, env=script_env(0, tree(dev)))
+        lines = p.stdout.split("\n")
+        label = "detected %d, notice covering the last %d" % (term, NOTICE)
+        widths = [viswidth(l) for l in lines]
+        if p.returncode != 0 or len(lines) != 2:
+            bad("%s: exit %d, %d line(s)" % (label, p.returncode, len(lines)))
+        elif max(widths) > term - NOTICE:
+            bad("%s: a line reaches column %d, under the notice\n        |%s|"
+                % (label, max(widths), plain(lines[widths.index(max(widths))])))
+        elif alignment_error(lines, layout(term)):
+            bad("%s: %s" % (label, alignment_error(lines, layout(term))))
+        elif "@incident-responder" not in plain(lines[0]):
+            bad("%s: lost the agent name\n        |%s|" % (label, plain(lines[0])))
+        else:
+            ok("%s: lines end at %s" % (label, widths))
+
 
 SPECIALISTS = ["hardware-engineer", "incident-responder", "security-reviewer",
                "system-designer", "craft-engineer", "spike-engineer",
@@ -638,8 +751,8 @@ def check_sub(name, tasks, cols, want_intact=True):
     if cols is not None:
         payload["columns"] = cols
     # With no `columns` and no COLUMNS in the environment the script falls back
-    # to its assumed 80 less the reserve; that is the width it must respect.
-    target = cols if cols is not None else 78
+    # to its assumed 80 less the margins; that is the width it must respect.
+    target = cols if cols is not None else ASSUMED
     label = "%s @ %s" % (name, cols if cols is not None else "no columns field")
 
     p = run_sub(json.dumps(payload), None)
@@ -773,6 +886,7 @@ for BASH in dedupe([shutil.which("bash"), "/bin/bash", "/usr/local/bin/bash",
     suite()
     pty_suite()
     width_source_suite()
+    overreach_suite()
     # Skipped when an alternate main script was named on the command line, since
     # the two are versioned together.
     if len(sys.argv) <= 1 and os.path.exists(SUBSCRIPT):
