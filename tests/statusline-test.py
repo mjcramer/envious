@@ -387,6 +387,34 @@ def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None,
     ok(label)
 
 
+PR_AFTER_BRANCH = re.compile(r"⎇ \S+ #148$")
+
+
+def pr_error(line1, target, branch=True):
+    """Why line 1 misplaces PR #148, or None.
+
+    The number sits at the end of the left group, directly after the branch
+    (after the directory when there is no branch); it is shed before the
+    branch, so a PR is never shown without it; and with room it is present.
+    """
+    split = groups(line1)
+    p = plain(line1)
+    left, right = (p[:GAP.search(p).start()], p[GAP.search(p).end():]) \
+        if split else (p, "")
+    if "#148" in right:
+        return "PR number is in the right group"
+    if "#148" in left:
+        if branch and not PR_AFTER_BRANCH.search(left):
+            return "PR number is not directly after the branch"
+        if not branch and not left.endswith(" #148"):
+            return "PR number does not end the left group"
+    # "Room" depends on the branch too: the dirty-worktree fixture's branch is
+    # 28 columns even shortened, and the PR goes when the branch has to.
+    elif target >= 200 or (branch and "⎇" in left and target >= 120):
+        return "dropped the PR number with room to spare"
+    return None
+
+
 def suite():
     # 1. Every fixture at every width, plus the unknown-width path.
     for name, obj, expect_two in cases:
@@ -401,6 +429,18 @@ def suite():
         for cols in WIDTHS + [None]:
             check(name, text, cols, expect_two, want_agent=agent, want_tail=tail,
                   want_aligned=aligned)
+
+    # PR placement without git: the fixture directories do not exist, so there
+    # is no branch, and the number must end the left group instead.
+    text = json.dumps(payload(pr={"number": 148}, agent={"name": "craft-engineer"},
+                              **wdir("%s/projects/mjcramer/envious.craft-engineer" % HOME)))
+    for cols in WIDTHS:
+        line1 = run(text, cols).stdout.split("\n")[0]
+        why = pr_error(line1, cols, branch=False)
+        if why:
+            bad("PR without a branch @ %d: %s\n        |%s|" % (cols, why, plain(line1)))
+        else:
+            ok("PR without a branch @ %d" % cols)
 
     # 2. A payload jq cannot parse must still leave a usable status line.
     for junk in ["", "not json", '{"workspace": ', "[1,2,3]"]:
@@ -430,6 +470,16 @@ def suite():
         text = json.dumps(payload(agent={"name": "hardware-engineer"},
                                   vim={"mode": "NORMAL"}, pr={"number": 148},
                                   **wdir(repo)))
+        # Shed order: at no width may the PR outlive the branch it belongs to.
+        for cols in range(30, 121, 2):
+            line1 = plain(run(text, cols, cwd=repo).stdout.split("\n")[0])
+            if "#148" in line1 and "⎇" not in line1:
+                bad("PR shed order @ %d: PR shown without its branch\n        |%s|"
+                    % (cols, line1))
+                break
+        else:
+            ok("PR is never shown without its branch, 30-120 columns")
+
         for cols in WIDTHS + [None]:
             target = cols if cols is not None else 80
             p = run(text, cols, cwd=repo)
@@ -441,6 +491,9 @@ def suite():
             elif target >= 120 and "@hardware-engineer" not in plain(lines[0]):
                 bad("dirty agent worktree @ %s: lost the agent name\n        |%s|"
                     % (cols, plain(lines[0])))
+            elif pr_error(lines[0], target):
+                bad("dirty agent worktree @ %s: %s\n        |%s|"
+                    % (cols, pr_error(lines[0], target), plain(lines[0])))
             else:
                 ok("dirty agent worktree @ %s (widths %s)"
                    % (cols if cols is not None else "unknown", widths))

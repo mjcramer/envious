@@ -89,7 +89,7 @@ IFS=$'\x1f' read -r \
 # only for the subagent status line — so the environment is the only source.
 set_width
 
-MAX_LEVEL_1=8
+MAX_LEVEL_1=9
 MAX_LEVEL_2=6
 
 # ----------------------------------------------------------------- line 1 ---
@@ -107,24 +107,26 @@ fi
 # Shed order, one step per level:
 #   1  directory to its last two components, branch to its last component
 #   2  output style, effort suffix
-#   3  git branch — in a worktree the directory tail already names it
-#   4  directory to its last component
-#   5  vim mode
-#   6  model name
-#   7  the ⚡ / 🧠off flags — later than the model because they are modes you
+#   3  PR number — it belongs to the branch, so it goes just before it and a
+#      PR is never shown without the branch it was opened from
+#   4  git branch — in a worktree the directory tail already names it
+#   5  directory to its last component
+#   6  vim mode
+#   7  model name
+#   8  the ⚡ / 🧠off flags — later than the model because they are modes you
 #      set and then forget, and forgetting them changes how the session behaves
-#   8  PR number, and the directory and agent name clipped against a budget so
-#      that the line cannot overflow however narrow the window is
+#   9  the directory and agent name clipped against a budget so that the line
+#      cannot overflow however narrow the window is
 build_line1() {
   local level=$1 dir agent budget share flags=''
 
   dir=$(tilde_path "$CUR_DIR")
-  if   (( level >= 4 )); then dir=$(elide_path "$dir" 1)
+  if   (( level >= 5 )); then dir=$(elide_path "$dir" 1)
   elif (( level >= 1 )); then dir=$(elide_path "$dir" 2)
   fi
 
   agent=$AGENT
-  if (( level >= 8 )); then
+  if (( level >= 9 )); then
     budget=$(( FIT_COLS - MIN_GAP ))
     (( budget < 4 )) && budget=4
     if [[ -n "$agent" ]]; then
@@ -136,28 +138,30 @@ build_line1() {
   fi
 
   LEFT="${BLUE}${B}${dir}${R}"
-  if (( level < 3 )) && [[ -n "$BRANCH" ]]; then
+  if (( level < 4 )) && [[ -n "$BRANCH" ]]; then
     local br=$BRANCH
     (( level >= 1 )) && br=${br##*/}
     LEFT+="${SEP}${PURPLE}⎇ ${br}${R}${DIRTY}"
   fi
+  # Directly after the branch; after the directory if git could not name one,
+  # since the number came from the payload and still identifies the work.
+  if (( level < 3 )) && [[ -n "$PR" ]]; then LEFT+=" ${BLUE}#${PR}${R}"; fi
 
   RIGHT=''
-  if (( level < 6 )) && [[ -n "$MODEL" ]]; then
+  if (( level < 7 )) && [[ -n "$MODEL" ]]; then
     RIGHT+="${GOLD}${B}${MODEL}${R}"
     if (( level < 2 )) && [[ -n "$EFFORT" ]]; then RIGHT+="${D}${GOLD}:${EFFORT}${R}"; fi
   fi
 
-  if (( level < 7 )); then
+  if (( level < 8 )); then
     [[ "$FAST"     == "true"  ]] && flags+="${CYAN}⚡${R}"
     [[ "$THINKING" == "false" ]] && flags+="${D}${GREY}🧠off${R}"
   fi
   if (( level < 2 )) && [[ -n "$STYLE" && "$STYLE" != "default" && "$STYLE" != "null" ]]; then
     flags+=" ${CYAN}${STYLE}${R}"
   fi
-  if (( level < 5 )) && [[ -n "$VIM" ]]; then flags+=" ${GREEN}${VIM}${R}"; fi
+  if (( level < 6 )) && [[ -n "$VIM" ]]; then flags+=" ${GREEN}${VIM}${R}"; fi
   if [[ -n "$agent" ]]; then flags+=" ${PURPLE}@${agent}${R}"; fi
-  if (( level < 8 )) && [[ -n "$PR" ]]; then flags+=" ${BLUE}#${PR}${R}"; fi
 
   if [[ -n "$flags" ]]; then
     [[ -n "$RIGHT" ]] && RIGHT+="$SEP"
