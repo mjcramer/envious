@@ -23,7 +23,10 @@
 #   2. a ruler — digits 1-9 then a letter per completed ten (A=10, B=20, …,
 #      X=240). The last character still visible is the usable width; subtract it
 #      from the terminal width and the difference is what the interface reserves,
-#      which is RESERVED_COLS in statusline-lib.sh.
+#      which is RESERVED_COLS in statusline-lib.sh. Renders while a notification
+#      is showing (MCP error, context-low warning, /rc) show how much of the
+#      right of the row it covers, which is what notice_margin() keeps free.
+#      usable_cols below is net of both.
 #
 # The file is the primary output: it survives a status line that is itself being
 # truncated, and it accumulates, so resizing the window between renders gives
