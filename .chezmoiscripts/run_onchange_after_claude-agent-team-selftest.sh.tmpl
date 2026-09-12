@@ -10,8 +10,15 @@ set -uo pipefail
 
 CLAUDE_DIR="{{ .chezmoi.homeDir }}/.claude"
 fail=0
-ok()   { printf '  OKAY  %s\n' "$1"; }
-bad()  { printf '  FAIL  %s\n' "$1"; fail=1; }
+# Colour only the labels, and only on a terminal with NO_COLOR unset (https://no-color.org),
+# so chezmoi logs and pipes get plain text. The escapes are zero-width, so columns hold.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  GREEN=$'\033[32m' RED=$'\033[31m' RESET=$'\033[0m'
+else
+  GREEN='' RED='' RESET=''
+fi
+ok()   { printf '  %sOKAY%s  %s\n' "$GREEN" "$RESET" "$1"; }
+bad()  { printf '  %sFAIL%s  %s\n' "$RED" "$RESET" "$1"; fail=1; }
 
 echo "claude agent-team self-test"
 
