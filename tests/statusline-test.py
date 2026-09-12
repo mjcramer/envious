@@ -9,20 +9,20 @@ harness deliberately does not reuse any of it: widths here are measured with
 unicodedata, the way a terminal measures them, and the fixtures are fed in as
 real JSON on stdin at real widths.
 
-The invariant under test is the one the user asked for -- nothing gets cut off
-unless there genuinely is not room -- expressed as three properties:
+The layout the user asked for, as properties of every rendered line:
 
-  fits     no rendered line reaches into the right of the row, where Claude
-           Code draws its notifications over whatever is there, nor into the
-           last column, where a line wraps
+  fits     no line is wider than the status line's area: the terminal width
+           less the footer chrome Claude Code draws around it
+  flush    the left group starts in column 0; the right group ends exactly at
+           the right edge of that area, so on a two-line status both right
+           groups end in the same column
   keeps    with room to spare, the agent name and the worktree directory are
            present in full (they are what say *which* agent and *which* checkout)
-  aligned  with room to spare, both right groups start in one column just past
-           the longer left group -- not out at an edge that is only as good as
-           the width detection that found it
+  sheds    as the window narrows, fields go in the documented order and a field
+           that has gone never comes back at a narrower width
 
 width_source_suite() pins down which source usable_cols() believes, in what
-order, and what margins come off it, by calling it directly. `ps` is shimmed
+order, and what comes off it, by calling it directly. `ps` is shimmed
 throughout so the process tree the scripts see is an input to the test rather
 than a property of the window the suite happens to be running in.
 
@@ -45,21 +45,18 @@ SCRIPT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
 SUBSCRIPT = os.path.join(REPO, "dot_claude", "executable_subagent-statusline.sh")
 LIB = os.path.join(REPO, "dot_claude", "statusline-lib.sh")
 
-# statusline-lib.sh: RESERVED_COLS, the margin taken off any *terminal* width;
-# notice_margin(), the room kept free at the right of the row for Claude Code's
-# notifications; and ASSUMED_COLS, what a line is laid out against when nothing
-# answered. All are asserted against exactly, so a change to any belongs here.
-RESERVED = 2
-NOTICE_MAX = 48
+# Claude Code 2.1.269's footer: Box{width: columns, paddingX: 2, columnGap: 1}
+# around the status line column and a right-hand column that is empty unless a
+# notification, /rc or /goal is showing. Its own arithmetic for the hint line in
+# the same column is `columns - 2*2 - (1 + <right column width>)`. RESERVED is
+# that 5; asserted against exactly, so a change to RESERVED_COLS belongs here.
+RESERVED = 5
 
 
-def notice(term):
-    return min(term // 4, NOTICE_MAX, (term - RESERVED) // 2)
-
-
-def layout(term):
-    """Columns a line may use on a terminal `term` wide."""
-    return term - RESERVED - notice(term)
+def layout(term, margin=0):
+    """Columns the status line is drawn in on a terminal `term` wide, with
+    CLAUDE_STATUSLINE_RIGHT_MARGIN=margin (capped at half of what is left)."""
+    return term - RESERVED - min(margin, (term - RESERVED) // 2)
 
 
 ASSUMED = layout(80)
@@ -113,25 +110,24 @@ def groups(line):
     return viswidth(p[:m.start()]), viswidth(p[:m.end()])
 
 
-def alignment_error(lines, limit):
-    """Why these lines' right groups are not in one column just past the
-    longer left group, or None when they are.
+def flush_error(lines, limit):
+    """Why these lines are not left group flush left, right group flush right
+    at `limit`, or None when they are.
 
-    A right group too wide to start there without passing `limit` is pulled
-    left instead, and must then end exactly at `limit` -- no earlier, since
-    that would be misaligned for nothing, and no later, since that is clipping.
+    Every line starts in column 0 and none is wider than `limit`. Every line
+    with a right group ends at exactly `limit` -- which, for a two-line status,
+    is the same as saying both right groups end in one column at the edge.
     """
-    split = [groups(l) for l in lines]
-    if any(s is None for s in split):
-        return "a line has no right group: %r" % [plain(l) for l in lines]
-    want = max(lw for lw, _ in split) + MIN_GAP
-    for (_, col), line in zip(split, lines):
-        if col == want:
-            continue
-        if col < want and viswidth(line) == limit:
-            continue
-        return ("right groups start at columns %s, want %d (or pulled left to end at %d)"
-                % ([c for _, c in split], want, limit))
+    for i, line in enumerate(lines, 1):
+        p = plain(line)
+        w = viswidth(line)
+        if p[:1] == " ":
+            return "line %d does not start in column 0: |%s|" % (i, p)
+        if w > limit:
+            return "line %d is %d columns wide, limit %d: |%s|" % (i, w, limit, p)
+        if groups(line) is not None and w != limit:
+            return ("line %d's right group ends at column %d, want %d: |%s|"
+                    % (i, w, limit, p))
     return None
 
 
@@ -171,7 +167,7 @@ AGENTS = ["orchestrator", "hardware-engineer", "incident-responder",
           "security-reviewer", "system-designer", "craft-engineer",
           "spike-engineer", "infra-engineer"]
 
-WIDTHS = [40, 60, 80, 100, 120, 160, 200]
+WIDTHS = [40, 60, 80, 100, 120, 160, 200, 239]
 
 HOME = "/Users/synthetic"
 
@@ -295,6 +291,7 @@ def script_env(cols, ps_table=None, **over):
     env["PATH"] = _shim_dir + os.pathsep + env.get("PATH", "")
     env["PS_FAKE_TABLE"] = ps_table or ""
     env.pop("CLAUDE_STATUSLINE_COLS", None)
+    env.pop("CLAUDE_STATUSLINE_RIGHT_MARGIN", None)
     env.pop("COLUMNS", None)
     env.pop("LINES", None)
     if cols is not None:
@@ -318,18 +315,9 @@ def run(payload_text, cols, cwd=REPO, env=None):
     return p
 
 
-def has_right_group(obj):
-    """True when line 2 has a right group at all."""
-    cost = obj.get("cost") or {}
-    if cost.get("total_cost_usd") or cost.get("total_lines_added") \
-            or cost.get("total_lines_removed"):
-        return True
-    return bool(obj.get("rate_limits"))
-
-
-def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None,
-          want_aligned=True):
+def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None):
     target = cols if cols is not None else 80  # unknown width assumes 80
+    limit = layout(target)
     p = run(payload_text, cols)
     label = "%s @ %s" % (name, cols if cols is not None else "unknown")
 
@@ -348,13 +336,10 @@ def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None,
         bad("%s: %d line(s), want 2" % (label, len(lines)))
         return
 
-    for i, line in enumerate(lines, 1):
-        w = viswidth(line)
-        # The right of the row belongs to Claude Code's notifications, and
-        # reaching the final column wraps on a terminal without deferred wrap.
-        if w > layout(target):
-            bad("%s: line %d is %d columns wide, limit %d of %d\n        |%s|"
-                % (label, i, w, layout(target), target, plain(line)))
+    if expect_two:
+        why = flush_error(lines, limit)
+        if why:
+            bad("%s: %s" % (label, why))
             return
 
     if want_agent and target >= 100:
@@ -377,14 +362,7 @@ def check(name, payload_text, cols, expect_two, want_agent=None, want_tail=None,
                 % (label, target, plain(lines[0])))
             return
 
-    if target >= 100 and expect_two and want_aligned:
-        why = alignment_error(lines, layout(target))
-        if why:
-            bad("%s: %s\n        |%s|\n        |%s|"
-                % (label, why, plain(lines[0]), plain(lines[1])))
-            return
-
-    ok(label)
+    ok("%s (ends %s, limit %d)" % (label, [viswidth(l) for l in lines], limit))
 
 
 PR_AFTER_BRANCH = re.compile(r"⎇ \S+ #148$")
@@ -415,6 +393,47 @@ def pr_error(line1, target, branch=True):
     return None
 
 
+def shed_order_error(render_line, widths, order, always=()):
+    """Why a line sheds its fields out of order, or None.
+
+    render_line(width) gives the plain text of the line at that width. `order`
+    is [(label, regex)] from the first field shed to the last. A field present
+    at some width must be present at every wider one, and each field must
+    survive down to a width at least as narrow as the one shed before it.
+    `always` are fields that must be present at every width.
+    """
+    present = {label: [] for label, _ in list(order) + list(always)}
+    samples = {}
+    for w in sorted(widths):
+        text = render_line(w)
+        samples[w] = text
+        for label, rx in list(order) + list(always):
+            if re.search(rx, text):
+                present[label].append(w)
+    wide = sorted(widths)
+    for label, _ in always:
+        missing = [w for w in wide if w not in present[label]]
+        if missing:
+            return "%s missing at %d\n        |%s|" % (label, missing[0], samples[missing[0]])
+    floor = {}
+    for label, _ in order:
+        seen = present[label]
+        if not seen:
+            return "%s never shown, even at %d" % (label, wide[-1])
+        lo = seen[0]
+        gaps = [w for w in wide if w > lo and w not in seen]
+        if gaps:
+            return ("%s shown at %d but gone at wider %d\n        |%s|"
+                    % (label, lo, gaps[0], samples[gaps[0]]))
+        floor[label] = lo
+    labels = [label for label, _ in order]
+    for earlier, later in zip(labels, labels[1:]):
+        if floor[later] > floor[earlier]:
+            return ("%s (kept down to %d) shed before %s (kept down to %d)"
+                    % (later, floor[later], earlier, floor[earlier]))
+    return None
+
+
 def suite():
     # 1. Every fixture at every width, plus the unknown-width path.
     for name, obj, expect_two in cases:
@@ -423,12 +442,21 @@ def suite():
             if isinstance(obj.get("agent"), dict) else None
         cur = (obj.get("workspace") or {}).get("current_dir") or obj.get("cwd") or ""
         tail = cur.rsplit("/", 1)[-1] if cur else None
-        # Line 1 always has a right group in these fixtures (the model); line
-        # 2 only when there is cost or a rate limit to show.
-        aligned = has_right_group(obj) and bool((obj.get("model") or {}).get("display_name"))
         for cols in WIDTHS + [None]:
-            check(name, text, cols, expect_two, want_agent=agent, want_tail=tail,
-                  want_aligned=aligned)
+            check(name, text, cols, expect_two, want_agent=agent, want_tail=tail)
+
+    # The reported layout, stated directly: both right groups end in one
+    # column, and that column is the edge of the status line's area.
+    text = json.dumps(payload(agent={"name": "craft-engineer"},
+                              **wdir("%s/projects/mjcramer/envious.craft-engineer" % HOME)))
+    for cols in (100, 239):
+        lines = run(text, cols).stdout.split("\n")
+        ends = [viswidth(l) for l in lines]
+        if len(lines) == 2 and all(groups(l) for l in lines) and ends == [layout(cols)] * 2:
+            ok("both right groups end at column %d on a %d-column terminal" % (layout(cols), cols))
+        else:
+            bad("right groups @ %d end at %s, want both %d\n        |%s|\n        |%s|"
+                % (cols, ends, layout(cols), *[plain(l) for l in lines]))
 
     # PR placement without git: the fixture directories do not exist, so there
     # is no branch, and the number must end the left group instead.
@@ -441,6 +469,21 @@ def suite():
             bad("PR without a branch @ %d: %s\n        |%s|" % (cols, why, plain(line1)))
         else:
             ok("PR without a branch @ %d" % cols)
+
+    # Line 2's shed order, from build_line2: reset suffixes, token counts, the
+    # meter, the 7-day limit, the 5-hour limit, the diff stats. Cost never goes.
+    text = json.dumps(payload())
+    why = shed_order_error(
+        lambda w: plain(run(text, w).stdout.split("\n")[-1]),
+        list(range(20, 240, 3)) + [239],
+        [("reset suffix", r"5h \d+% \d+d"), ("token counts", r"126\.0k/200\.0k"),
+         ("meter", r"[█░]"), ("7d limit", r"7d "), ("5h limit", r"5h "),
+         ("diff stats", r"\+812/-340")],
+        always=[("cost", r"\$4\.21")])
+    if why:
+        bad("line 2 shed order: %s" % why)
+    else:
+        ok("line 2 sheds resets, tokens, meter, 7d, 5h, diff in that order; cost always kept")
 
     # 2. A payload jq cannot parse must still leave a usable status line.
     for junk in ["", "not json", '{"workspace": ', "[1,2,3]"]:
@@ -469,25 +512,29 @@ def suite():
 
         text = json.dumps(payload(agent={"name": "hardware-engineer"},
                                   vim={"mode": "NORMAL"}, pr={"number": 148},
+                                  output_style={"name": "Explanatory"},
                                   **wdir(repo)))
-        # Shed order: at no width may the PR outlive the branch it belongs to.
-        for cols in range(30, 121, 2):
-            line1 = plain(run(text, cols, cwd=repo).stdout.split("\n")[0])
-            if "#148" in line1 and "⎇" not in line1:
-                bad("PR shed order @ %d: PR shown without its branch\n        |%s|"
-                    % (cols, line1))
-                break
+        # Line 1's shed order, from build_line1. The agent name is never shed
+        # outright, only clipped at the last level.
+        why = shed_order_error(
+            lambda w: plain(run(text, w, cwd=repo).stdout.split("\n")[0]),
+            list(range(24, 240, 3)) + [239],
+            [("effort suffix", r":high"), ("output style", r"Explanatory"),
+             ("PR number", r"#148"), ("git branch", r"⎇"), ("vim mode", r"NORMAL"),
+             ("model", r"Opus 5"), ("fast flag", r"⚡")],
+            always=[("agent", r"@")])
+        if why:
+            bad("line 1 shed order: %s" % why)
         else:
-            ok("PR is never shown without its branch, 30-120 columns")
+            ok("line 1 sheds style/effort, PR, branch, vim, model, flags in that order")
 
         for cols in WIDTHS + [None]:
             target = cols if cols is not None else 80
             p = run(text, cols, cwd=repo)
             lines = p.stdout.split("\n")
-            widths = [viswidth(l) for l in lines]
-            if max(widths) > layout(target):
-                bad("dirty agent worktree @ %s: %d columns wide, limit %d\n        |%s|"
-                    % (cols, max(widths), layout(target), plain(lines[0])))
+            why = flush_error(lines, layout(target))
+            if why:
+                bad("dirty agent worktree @ %s: %s" % (cols, why))
             elif target >= 120 and "@hardware-engineer" not in plain(lines[0]):
                 bad("dirty agent worktree @ %s: lost the agent name\n        |%s|"
                     % (cols, plain(lines[0])))
@@ -495,8 +542,9 @@ def suite():
                 bad("dirty agent worktree @ %s: %s\n        |%s|"
                     % (cols, pr_error(lines[0], target), plain(lines[0])))
             else:
-                ok("dirty agent worktree @ %s (widths %s)"
-                   % (cols if cols is not None else "unknown", widths))
+                ok("dirty agent worktree @ %s (ends %s)"
+                   % (cols if cols is not None else "unknown",
+                      [viswidth(l) for l in lines]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -572,15 +620,11 @@ def pty_suite():
             lines = [l for l in out.split("\n") if l]
             if len(lines) != 2:
                 bad("pty %d: %d line(s) of output, want 2" % (cols, len(lines)))
-            elif max(viswidth(l) for l in lines) > layout(cols):
-                bad("pty %d: rendered %d columns, limit %d\n        |%s|"
-                    % (cols, max(viswidth(l) for l in lines), layout(cols),
-                       plain(lines[0])))
-            elif cols >= 100 and alignment_error(lines, layout(cols)):
-                bad("pty %d: %s" % (cols, alignment_error(lines, layout(cols))))
+            elif flush_error(lines, layout(cols)):
+                bad("pty %d: %s" % (cols, flush_error(lines, layout(cols))))
             else:
-                ok("pty %3d: both lines fit and align (%s)"
-                   % (cols, [viswidth(l) for l in lines]))
+                ok("pty %3d: both lines flush to %d (%s)"
+                   % (cols, layout(cols), [viswidth(l) for l in lines]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -621,11 +665,7 @@ def tree(*rows):
 
 
 def usable(label, cols=None, ps_table=None, **over):
-    """What usable_cols() answers in a given environment, or None on error.
-
-    Called directly rather than read off a rendered line: the line no longer
-    stretches to the width it was given, so its length does not reveal it.
-    """
+    """What usable_cols() answers in a given environment, or None on error."""
     p = subprocess.run([BASH, "-c", '. "$1" && usable_cols', "usable", LIB],
                        capture_output=True, text=True, cwd=REPO,
                        env=script_env(cols, ps_table, **over),
@@ -641,7 +681,7 @@ def width_source_suite():
     """Which source usable_cols() believes, and in what order."""
 
     def spans(label, term, want=None, **kw):
-        """usable_cols() took `term` as the terminal width, less the margins."""
+        """usable_cols() took `term` as the terminal width, less the chrome."""
         want = layout(term) if want is None else want
         got = usable(label, **kw)
         if got is None:
@@ -679,17 +719,14 @@ def width_source_suite():
         spans("override %-6r ignored, COLUMNS used" % junk, 100,
               cols=100, CLAUDE_STATUSLINE_COLS=junk)
 
-    # 4. COLUMNS=0. This is the case that was indistinguishable from unset and
-    #    is what actually arrives: bash sets COLUMNS=0 when it has no terminal,
-    #    and 0 is not a width.
+    # 4. COLUMNS=0 is not a width, and defers to the terminal.
     unknown("COLUMNS=0 with no terminal anywhere", cols=0)
     with live_pty(240) as dev:
         spans("COLUMNS=0 defers to the parent's terminal", 240,
               cols=0, ps_table=tree(dev))
 
-    # 5. The parent's terminal -- the route that makes this work under Claude
-    #    Code, where the status line has no terminal of its own but the process
-    #    that spawned it does.
+    # 5. The parent's terminal -- the route for when Claude Code exports no
+    #    COLUMNS: the status line has no terminal of its own but its parent does.
     for term in (100, 132, 240):
         with live_pty(term) as dev:
             spans("parent's terminal, %d columns" % term, term, ps_table=tree(dev))
@@ -709,69 +746,60 @@ def width_source_suite():
     unknown("terminal name is an absolute path", ps_table=tree("/dev/tty"))
     unknown("ps knows nothing about our parent", ps_table="")
 
-    # 8. COLUMNS still wins over the terminal when Claude Code does set it: a
-    #    version that reports a width knows better than we do how much of the
-    #    window the status line gets.
+    # 8. COLUMNS wins over the terminal: Claude Code exports it from the same
+    #    stdout its footer is laid out against.
     with live_pty(240) as dev:
         spans("COLUMNS beats the parent's terminal", 120, cols=120, ps_table=tree(dev))
 
-    # 9. The notification margin. Its default scales with the window and is
-    #    capped; the override replaces it outright, 0 included, and a value
-    #    that is not a count falls back to the default rather than failing.
-    for term, want in ((40, 10), (80, 20), (120, 30), (192, 48), (239, 48)):
-        spans("default margin at %d is %d" % (term, want), term,
-              want=term - RESERVED - want, CLAUDE_STATUSLINE_COLS=term)
-    spans("margin 0 lays out to the edge", 239, want=239 - RESERVED,
+    # 9. The chrome is exactly RESERVED columns at every width, with no
+    #    heuristic margin on top: the right edge is the confirmed one.
+    for term in (40, 80, 120, 192, 239):
+        spans("no margin by default at %d" % term, term, want=term - RESERVED,
+              CLAUDE_STATUSLINE_COLS=term)
+    # The right-margin override is a plain inset on top of that, 0 included,
+    # and a value that is not a count is ignored rather than failing.
+    spans("margin 0 is the default edge", 239, want=239 - RESERVED,
           CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN=0)
-    spans("margin 60 is taken as given", 239, want=239 - RESERVED - 60,
-          CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN=60)
+    spans("margin 11 (for '/rc active') is taken as given", 239, want=239 - RESERVED - 11,
+          CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN=11)
     spans("margin '010' is ten, not octal", 239, want=239 - RESERVED - 10,
           CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN="010")
     # Never more than half of what is left, so the line keeps somewhere to go.
-    spans("margin 500 is capped at half", 100, want=(100 - RESERVED + 1) // 2,
+    spans("margin 500 is capped at half", 100, want=layout(100, 500),
           CLAUDE_STATUSLINE_COLS=100, CLAUDE_STATUSLINE_RIGHT_MARGIN=500)
     for junk in ("abc", "-5", "", " 10", "1.5"):
-        spans("margin %-5r ignored, default used" % junk, 239,
+        spans("margin %-5r ignored, no margin" % junk, 239, want=239 - RESERVED,
               CLAUDE_STATUSLINE_COLS=239, CLAUDE_STATUSLINE_RIGHT_MARGIN=junk)
 
 
-def overreach_suite():
-    """The reported bug: a width that is right about the terminal and wrong
-    about the row.
-
-    stty on the parent's terminal answers 239, and it is correct -- but the
-    right of that row is where Claude Code draws its notifications, so text
-    laid out to column 237 ends under one of them. Here a notice of NOTICE
-    columns is taken to be showing, and every line must end before it.
-
-    Only from 160 columns up, where the default margin (a quarter of the
-    window) is at least NOTICE. Below that the margin is smaller by design:
-    the docs say a notice truncates a narrow status line whatever it does, and
-    reserving the full width of the longest one there would cost fields on
-    every render to save text during the rare ones.
+def edge_suite():
+    """The reported case end to end: a 239-column terminal found through the
+    parent's tty, as under Claude Code with no COLUMNS. Both lines must reach
+    exactly column 234 and no further -- 237 was clipped, and ending short of
+    the edge is the layout the user rejected. With a right margin set, the
+    same holds against the inset edge.
     """
-    NOTICE = 40      # about the context-low warning, the longest documented
     text = json.dumps(payload(
         agent={"name": "incident-responder"}, vim={"mode": "NORMAL"},
         pr={"number": 148}, output_style={"name": "Explanatory"},
         **wdir("%s/projects/mjcramer/envious.incident-responder" % HOME)))
-    for term in (160, 239):
+    for term, margin in ((160, None), (239, None), (239, 11)):
         with live_pty(term) as dev:
-            p = run(text, None, env=script_env(0, tree(dev)))
+            env = script_env(0, tree(dev), CLAUDE_STATUSLINE_RIGHT_MARGIN=margin)
+            p = run(text, None, env=env)
         lines = p.stdout.split("\n")
-        label = "detected %d, notice covering the last %d" % (term, NOTICE)
-        widths = [viswidth(l) for l in lines]
+        limit = layout(term, margin or 0)
+        label = "detected %d, margin %s" % (term, margin if margin is not None else "unset")
         if p.returncode != 0 or len(lines) != 2:
             bad("%s: exit %d, %d line(s)" % (label, p.returncode, len(lines)))
-        elif max(widths) > term - NOTICE:
-            bad("%s: a line reaches column %d, under the notice\n        |%s|"
-                % (label, max(widths), plain(lines[widths.index(max(widths))])))
-        elif alignment_error(lines, layout(term)):
-            bad("%s: %s" % (label, alignment_error(lines, layout(term))))
+        elif flush_error(lines, limit):
+            bad("%s: %s" % (label, flush_error(lines, limit)))
+        elif not all(groups(l) for l in lines):
+            bad("%s: a line lost its right group: %r" % (label, [plain(l) for l in lines]))
         elif "@incident-responder" not in plain(lines[0]):
             bad("%s: lost the agent name\n        |%s|" % (label, plain(lines[0])))
         else:
-            ok("%s: lines end at %s" % (label, widths))
+            ok("%s: both lines end at column %d" % (label, limit))
 
 
 SPECIALISTS = ["hardware-engineer", "incident-responder", "security-reviewer",
@@ -804,7 +832,7 @@ def check_sub(name, tasks, cols, want_intact=True):
     if cols is not None:
         payload["columns"] = cols
     # With no `columns` and no COLUMNS in the environment the script falls back
-    # to its assumed 80 less the margins; that is the width it must respect.
+    # to its assumed 80 less the chrome; that is the width it must respect.
     target = cols if cols is not None else ASSUMED
     label = "%s @ %s" % (name, cols if cols is not None else "no columns field")
 
@@ -939,7 +967,7 @@ for BASH in dedupe([shutil.which("bash"), "/bin/bash", "/usr/local/bin/bash",
     suite()
     pty_suite()
     width_source_suite()
-    overreach_suite()
+    edge_suite()
     # Skipped when an alternate main script was named on the command line, since
     # the two are versioned together.
     if len(sys.argv) <= 1 and os.path.exists(SUBSCRIPT):
