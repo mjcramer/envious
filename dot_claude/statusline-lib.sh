@@ -16,9 +16,9 @@
 #                                   detection. Export it if the line ever lays
 #                                   out narrower than the window; see
 #                                   usable_cols() below.
-#   CLAUDE_STATUSLINE_RIGHT_MARGIN  columns kept free at the right of the row
-#                                   for Claude Code's own notifications; see
-#                                   notice_margin() below. 0 lays out to the
+#   CLAUDE_STATUSLINE_RIGHT_MARGIN  extra columns kept free at the right, on
+#                                   top of Claude Code's footer chrome; see
+#                                   right_margin() below. Default 0, the true
 #                                   edge.
 
 # ---------------------------------------------------------------- palette ---
@@ -163,46 +163,44 @@ fmt_reset() {
 
 # ------------------------------------------------------------------ width ---
 
-# Columns the interface keeps for itself, subtracted from a *terminal* width.
+# Columns Claude Code's footer keeps for itself, subtracted from a *terminal*
+# width to get the width the status line is actually drawn in.
 #
-# NOT MEASURED. The docs say `padding` (0 here) adds indentation on top of "the
-# interface's built-in spacing" but never say how much that spacing is, and the
-# spacing cannot be observed from inside a script whose output is captured. Two
-# columns is a guess deliberately biased toward not wrapping: one for that
-# spacing, one so a full-width line never lands in the final cell, where a
-# terminal without deferred wrap breaks the line. statusline-width-probe.sh next
-# to this file measures the real number — point `statusLine` at it for one
-# session and read the ruler. Raise this by the same amount if `padding` is ever
-# raised.
-RESERVED_COLS=2
-
-# Room kept free at the right of the row for Claude Code's own notifications,
-# which the docs say share the status line's row: "System notifications like MCP
-# server errors and auto-updates display on the right side of the row. Transient
-# notifications such as the context-low warning also cycle through this area",
-# verbose mode adds a token counter there, and "these notifications may truncate
-# your status line output". Their width is not documented and varies with the
-# message, so a full-width layout ends up with its tail under whichever one is
-# showing. That was the clipped right group once the real terminal width
-# started being detected.
+# Read out of the Claude Code 2.1.269 binary rather than guessed. The footer is
 #
-# The default is a quarter of the terminal, capped at NOTICE_MARGIN_MAX: that
-# clears the longest notices (the context-low warning is around 40 columns)
-# on a wide window without starving a narrow one. On a narrow window a notice
-# wins anyway, per the docs, so a larger margin there would only cost fields.
-# CLAUDE_STATUSLINE_RIGHT_MARGIN overrides it, and 0 lays out to the edge.
-# Whatever the source, at most half of what is left after RESERVED_COLS is
-# given away, so a large value cannot leave the line nothing to lay out in.
-NOTICE_MARGIN_MAX=48
+#   Box{width: columns, flexDirection: "row", flexWrap: "wrap",
+#       paddingX: 2, columnGap: 1}
+#     ├─ Box{flexShrink: 1}   the status line, then the footer hints
+#     └─ Box{flexShrink: 0, marginLeft: "auto"}   notifications, /rc, /goal
+#
+# and Claude Code sizes the hint line that shares the left column with the
+# same arithmetic: `rowWidth = columns - 2*paddingX - (columnGap + <measured
+# width of the right column>)`. So the left column is columns - 5 wide while the
+# right column is empty, and each line inside it is drawn `wrap: "truncate"`
+# at that width. The 2 columns of right padding also keep a full-width line out
+# of the terminal's last cell, so no allowance for deferred wrap is needed.
+#
+# The `statusLine.padding` setting (0 here) is a further paddingX inside the
+# left column; if it is ever raised, raise this by twice as much.
+RESERVED_COLS=5
 
-# Columns to keep free for notifications on a terminal <term> columns wide.
-notice_margin() {
-  local term=$1 m
+# Extra columns to keep free at the right, beyond RESERVED_COLS, from
+# CLAUDE_STATUSLINE_RIGHT_MARGIN. Default 0, which is the confirmed edge.
+#
+# The right column is empty unless something is showing in it: a notification
+# (MCP error, auto-update, context-low, verbose token count), "/rc active" (or
+# "/rc" once it has been seen a few times), "/goal active", "memory paused".
+# While one is, the status line column shrinks by its width plus the gap and
+# the end of the right group is truncated. The script cannot see those — they
+# are not in the payload — so the default lays out for the usual empty column
+# and accepts that trade. Anyone who keeps something there permanently (remote
+# control left on is the likely one: 10 columns for "/rc active", 3 for "/rc",
+# plus 1 for the gap) sets the margin to match. Capped at half of what is
+# left after RESERVED_COLS so a large value cannot leave nothing to lay out in.
+right_margin() {
+  local term=$1 m=0
   if [[ "${CLAUDE_STATUSLINE_RIGHT_MARGIN:-}" =~ ^[0-9]+$ ]]; then
     m=$(( 10#$CLAUDE_STATUSLINE_RIGHT_MARGIN ))
-  else
-    m=$(( term / 4 ))
-    (( m > NOTICE_MARGIN_MAX )) && m=$NOTICE_MARGIN_MAX
   fi
   (( m > (term - RESERVED_COLS) / 2 )) && m=$(( (term - RESERVED_COLS) / 2 ))
   (( m < 0 )) && m=0
@@ -211,11 +209,11 @@ notice_margin() {
 
 # What to lay out against when the width cannot be measured at all. Assuming
 # more than the window has is exactly what clips the end of a line, so assume
-# the classic 80 — less the same margins, since 80 is a terminal width like the
+# the classic 80 — less the same chrome, since 80 is a terminal width like the
 # measured ones. It is a floor, not a guess at this terminal: raising it would
 # just trade one wrong constant for another. Set CLAUDE_STATUSLINE_COLS if
 # detection ever fails on a wide window.
-ASSUMED_COLS=$(( 80 - RESERVED_COLS - $(notice_margin 80) ))
+ASSUMED_COLS=$(( 80 - RESERVED_COLS - $(right_margin 80) ))
 
 # How far up the process tree to look for a terminal. The status line is a
 # grandchild of Claude Code at worst (a shell wrapper, then Claude Code itself),
@@ -254,20 +252,20 @@ ancestor_cols() {
 
 # Usable width for one line, or 0 when it cannot be determined.
 #
-# The docs say Claude Code sets COLUMNS and LINES for the status line and that
-# "tput cols and language-level width detection cannot read the terminal size
-# from inside the script". Measured on 2.1.267 the first half of that is not
-# true: COLUMNS arrives as 0 — bash's own value for "no terminal", not something
-# Claude Code exported — and nothing else in the environment carries a width
-# either. Believing that 0 is what parked this layout at the assumed 80 on a
-# 239-column window.
+# Claude Code does export COLUMNS for the status line. 2.1.267 to 2.1.269 all
+# run it with `{columns, rows} = process.stdout; if (columns) env.COLUMNS =
+# String(columns)`, the same stdout the footer is laid out against, and bash
+# keeps an inherited COLUMNS with no terminal. It is skipped only when
+# process.stdout has no column count. A COLUMNS of 0 was once measured here and
+# is still unexplained, so 0 is treated as "not given" and the terminal is asked
+# instead.
 #
 # tput is not consulted at all: with no terminal it answers terminfo's default
 # of 80 whatever the real size is, and a wrong width is worse than no width. No
 # width lays out conservatively; a wrong one overflows and gets clipped.
 #
-# Sources, best first. Each is a *terminal* width, so the same margins
-# (RESERVED_COLS and notice_margin) come off whichever one answered.
+# Sources, best first. Each is a *terminal* width, so the same chrome
+# (RESERVED_COLS and right_margin) comes off whichever one answered.
 usable_cols() {
   local w=''
 
@@ -298,7 +296,7 @@ usable_cols() {
     printf '0'
     return
   fi
-  printf '%d' $(( w - RESERVED_COLS - $(notice_margin "$w") ))
+  printf '%d' $(( w - RESERVED_COLS - $(right_margin "$w") ))
 }
 
 # Set COLS (measured usable width, 0 if unknown) and FIT_COLS (what to lay out
@@ -319,10 +317,6 @@ set_width() {
 # Smallest gap that still reads as two separate groups.
 MIN_GAP=3
 
-# Column the right group starts at when the width is unknown. Keeps the layout
-# spread out without pushing it toward an edge we are only guessing at.
-FALLBACK_COL=52
-
 # Sets LEFT and RIGHT to the richest version of the line that fits.
 #
 # The steps a build function takes are deliberately fine-grained: dropping two
@@ -340,38 +334,19 @@ fit() {
   done
 }
 
-# Column at which to start the right groups of several lines rendered together,
-# given their left groups: just past the widest one. Starting there rather than
-# at the right edge is what keeps the layout from depending on the edge being
-# where we measured it — the one number here we cannot confirm — and it puts
-# the right groups of a multi-line status in one column.
-right_col() {
-  local left lw col=0
-  for left in "$@"; do
-    lw=$(vislen "$left")
-    (( lw > col )) && col=$lw
-  done
-  printf '%d' $(( col + MIN_GAP ))
-}
-
-# Join a line's two groups. With a <col> (from right_col) the right group starts
-# there, pulled left when that would carry it past FIT_COLS; without one it is
-# pushed out to FIT_COLS. Either way the gap never drops below MIN_GAP.
+# Join a line's two groups: the left group flush left, the right group flush
+# right, ending exactly at FIT_COLS. Every line rendered at one width therefore
+# ends its right group in the same column, the right edge of the status line's
+# area. That holds with an unknown width too: the lines end at ASSUMED_COLS,
+# which is a floor, so they cannot run past the real edge.
+#
+# The gap never drops below MIN_GAP. The build functions' last level clips
+# against FIT_COLS, so a line that fitted never needs more than that.
 render() {
-  local left=$1 right=$2 col=${3:-} lw rw gap
+  local left=$1 right=$2 lw rw gap
   if [[ -z "$right" ]]; then printf '%s' "$left"; return; fi
   lw=$(vislen "$left"); rw=$(vislen "$right")
-  if [[ -n "$col" ]]; then
-    (( col + rw > FIT_COLS )) && col=$(( FIT_COLS - rw ))
-    gap=$(( col - lw ))
-    (( gap < MIN_GAP )) && gap=$MIN_GAP
-    printf '%s%*s%s' "$left" "$gap" '' "$right"
-    return
-  fi
   gap=$(( FIT_COLS - lw - rw ))
-  # With no measured width, spread to the fallback column rather than out to an
-  # edge we are guessing at, but never further than the assumed width allows.
-  if (( COLS == 0 )) && (( gap > FALLBACK_COL - lw )); then gap=$(( FALLBACK_COL - lw )); fi
   (( gap < MIN_GAP )) && gap=$MIN_GAP
   printf '%s%*s%s' "$left" "$gap" '' "$right"
 }
