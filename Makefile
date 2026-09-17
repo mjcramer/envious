@@ -25,6 +25,7 @@ chez-apply:
 .PHONY: test
 test:
 	@tests/statusline-test.py
+	@tests/ssh-signing-test.py
 
 .PHONY: chez-delete-state
 chez-delete-state:
