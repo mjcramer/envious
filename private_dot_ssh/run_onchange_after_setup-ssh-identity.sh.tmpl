@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
 
-# run_onchange_, not run_once_: this owns two derived artefacts (the key and
-# allowed_signers) and both steps are idempotent, so re-running is free. It also
-# means a change to .email -- which is baked into the rendered script, and so
-# into its content hash -- re-runs this and refreshes the allowed_signers
-# principal. run_once_ would leave a stale principal behind on such a host.
+# run_onchange_, not run_once_: every step here is idempotent, so re-running is
+# free, and .email is baked into the rendered script and so into its content
+# hash -- meaning a host whose email changes re-runs this and re-points the
+# allowed_signers principal at the new address. run_once_ would leave the old
+# principal behind with nothing to notice it.
 
 set -euo pipefail
 echo "==> chezmoi: $(basename "${BASH_SOURCE[0]}")"
 prefix="[setup ssh identity]"
 echo
 
+email={{ .email | quote }}
 key="$HOME/.ssh/id_ed25519"
 pubkey="$key.pub"
 allowed_signers="$HOME/.ssh/allowed_signers"
 
 if [ ! -f "$key" ]; then
     echo "$prefix Generating ed25519 key..."
-    ssh-keygen -t ed25519 -C {{ .email | quote }} -f "$key" -N ""
+    ssh-keygen -t ed25519 -C "$email" -f "$key" -N ""
     echo "$prefix SSH key generated at $key"
     echo "$prefix Public key:"
     cat "$pubkey"
@@ -27,22 +28,78 @@ else
 fi
 
 # allowed_signers is what lets `git log --show-signature` verify locally; git's
-# gpg.ssh.allowedSignersFile points at it. Fully regenerated rather than merged:
-# it holds exactly one principal, and merging would be more machinery than the
-# problem deserves. Extra principals added by hand will be overwritten.
+# gpg.ssh.allowedSignersFile points at it. It is trust data, not derived state:
+# it is exactly the file you add a colleague's key to, so only the line naming
+# $email is ours to manage. Every other line -- other principals, comments --
+# is carried through untouched.
 if [ ! -f "$pubkey" ]; then
     # Visible and recoverable rather than fatal: the private key still works for
     # auth and for signing, only local verification is degraded. A later apply
     # picks this up once the pubkey is restored (ssh-keygen -y -f "$key").
-    echo "$prefix WARNING: $pubkey is missing, skipping $allowed_signers."
+    echo "$prefix WARNING: $pubkey is missing, leaving $allowed_signers alone."
     echo "$prefix WARNING: signature verification will find no matching principal."
 else
-    line="{{ .email }} $(cat "$pubkey")"
-    if [ -f "$allowed_signers" ] && [ "$(cat "$allowed_signers")" = "$line" ]; then
+    managed="$email $(cat "$pubkey")"
+
+    # awk rather than grep: an email is full of regex metacharacters, and a
+    # field comparison cannot over-match the way "^$email " can. Anything whose
+    # first field is not $email -- including comment lines -- is somebody else's.
+    if [ -f "$allowed_signers" ]; then
+        others=$(awk -v principal="$email" '$1 != principal' "$allowed_signers")
+    else
+        others=""
+    fi
+
+    # Built as one string rather than appended conditionally: under `set -e` a
+    # trailing `[ -n "$others" ] && printf ...` would abort the script on the
+    # common case of there being no other principals.
+    if [ -n "$others" ]; then
+        desired="$managed
+$others"
+    else
+        desired="$managed"
+    fi
+
+    # $(cat) strips trailing newlines, as does $(awk ...), so both sides of this
+    # comparison are newline-free and a no-op run really is a no-op.
+    if [ -f "$allowed_signers" ] && [ "$(cat "$allowed_signers")" = "$desired" ]; then
         echo "$prefix $allowed_signers already up to date"
     else
-        printf '%s\n' "$line" > "$allowed_signers"
-        chmod 644 "$allowed_signers"
-        echo "$prefix Wrote $allowed_signers"
+        # Written via a temp file in the same directory so a failure part way
+        # through cannot leave a truncated trust file behind, and so the file is
+        # never briefly world-readable at the wrong mode.
+        tmp="$allowed_signers.chezmoi-new"
+        printf '%s\n' "$desired" > "$tmp"
+        chmod 644 "$tmp"
+        mv -f "$tmp" "$allowed_signers"
+        if [ -n "$others" ]; then
+            echo "$prefix Updated the $email principal in $allowed_signers"
+            echo "$prefix (kept $(printf '%s\n' "$others" | wc -l | tr -d ' ') other line(s))"
+        else
+            echo "$prefix Wrote $allowed_signers"
+        fi
     fi
 fi
+
+# ssh signing (gpg.format=ssh, gpg.ssh.allowedSignersFile) arrived in git 2.34.
+# The git config this repo deploys turns on commit.gpgsign unconditionally, so
+# on an older git every commit fails rather than falling back to unsigned. apt
+# installs git unpinned, and Ubuntu 20.04 (2.25) and Debian 11 (2.30) are below
+# the floor; Ubuntu 22.04 (2.34) is exactly on it. Warn here, at provisioning
+# time, rather than letting it surface as an opaque failure at first commit.
+git_version=$(git --version 2>/dev/null | awk '{print $3}') || true
+case "$git_version" in
+    [0-9]*.[0-9]*)
+        git_major=${git_version%%.*}
+        git_minor=${git_version#*.}
+        git_minor=${git_minor%%.*}
+        if [ "$git_major" -lt 2 ] || { [ "$git_major" -eq 2 ] && [ "$git_minor" -lt 34 ]; }; then
+            echo "$prefix WARNING: git $git_version is older than 2.34 and cannot sign"
+            echo "$prefix WARNING: with an ssh key. Commits will fail until git is upgraded;"
+            echo "$prefix WARNING: 'git config --local commit.gpgsign false' unblocks one repo."
+        fi
+        ;;
+    *)
+        echo "$prefix WARNING: could not read a git version, skipping the 2.34 signing check."
+        ;;
+esac
