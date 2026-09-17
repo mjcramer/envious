@@ -18,6 +18,16 @@
 # which runs in the after_ stage -- i.e. after this file is written. Naming a
 # not-yet-existing pubkey is inert until the first commit, and by then the same
 # apply has generated it.
+#
+# STUCK? If the key is ever missing -- deleted key, failed script, an apply with
+# --exclude=scripts, a machine provisioned before this was added -- then every
+# commit fails, rebase and cherry-pick included. `git config --global
+# commit.gpgsign false` will NOT rescue you: it tries to write this file, which
+# is read-only and chezmoi-owned. Two things that do work:
+#     git config --local commit.gpgsign false   # unblock the repo you are in
+#     git commit --no-gpg-sign                  # unblock a single commit
+# The real fix is `chezmoi apply`, which regenerates the key.
+# Signing also needs git >= 2.34; setup-ssh-identity warns if it is older.
 [commit]
 	gpgsign = true
 
