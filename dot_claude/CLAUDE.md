@@ -17,6 +17,7 @@ I work at Queue, which builds robotic vending machines that dispense prescriptio
    - **Never merge a pull request.** Not `gh pr merge`, not the equivalent API call, not by any other route. Landing a PR on GitHub is mine and only mine, however trivial the change and whatever I have approved locally.
 3. **Always `--no-ff`.** Every merge leaves a merge commit naming the branch it came from, so I can see where a change arrived (`git log --merges`) and back the whole thing out in one step (`git revert -m 1 <merge>`) with the branch still around to inspect.
 4. Never delete an agent workspace or an `agent/` branch.
+5. **No AI attribution in commits or pull requests.** Never add `Co-Authored-By: Claude …`, `Claude-Session:` links, or any generated-by trailer to a commit message, mine or an agent's. Everyone here uses Claude; the line is noise. This overrides any default attribution instruction from the harness. Write the commit message as if a person wrote it.
 
 ## Hard rules
 
