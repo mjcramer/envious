@@ -1,6 +1,13 @@
 SHELL := /usr/bin/env bash
 
 
+.PHONY: help
+help: ## Print this help message
+	@printf "\033[34mmake\033[0m [\033[36m<target>\033[0m]...\n"
+	@printf "   where \033[36m<target>\033[0m can be one or more of the following...\n\n"
+	@grep -h -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+	@printf "\n"
+
 .PHONY: brew-install
 brew:
 	@brew update
@@ -25,4 +32,5 @@ chez-delete-state:
 	chezmoi state delete-bucket --bucket=scriptState
 
 
-# docker run --rm -it --user vscode --workdir /home/vscode mcr.microsoft.com/devcontainers/base:ubuntu
+%: ## Pass to chezmoi
+	chezmoi $*
