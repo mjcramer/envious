@@ -11,6 +11,16 @@
 [color]
 	ui = true
 
+# Signing is declared here rather than set with `git config --global` at
+# provisioning time: this file is readonly_ and chezmoi-owned, so an imperative
+# write would either hit a read-only file or be reverted by the next apply.
+# The key it names is created by private_dot_ssh's setup-ssh-identity script,
+# which runs in the after_ stage -- i.e. after this file is written. Naming a
+# not-yet-existing pubkey is inert until the first commit, and by then the same
+# apply has generated it.
+[commit]
+	gpgsign = true
+
 [core]
 	autocrlf = "input"
 	editor = "vim"
@@ -31,6 +41,14 @@
 	process = "git-lfs filter-process"
 	required = true
 	smudge = "git-lfs smudge -- %f"
+
+[gpg]
+	format = "ssh"
+
+# Lets `git log --show-signature` verify locally instead of reporting "No
+# principal matched". Regenerated from the pubkey by setup-ssh-identity.
+[gpg "ssh"]
+	allowedSignersFile = {{ joinPath .chezmoi.homeDir ".ssh" "allowed_signers" | quote }}
 
 [init]
 	defaultBranch = "main"
@@ -63,3 +81,6 @@
 [user]
 	email = {{ .email | quote }}
 	name = "Michael Cramer"
+	# Absolute, not "~/...": git 2.55 expands the tilde here but older gits on
+	# the Linux target do not, and the failure is a confusing signing error.
+	signingkey = {{ joinPath .chezmoi.homeDir ".ssh" "id_ed25519.pub" | quote }}
