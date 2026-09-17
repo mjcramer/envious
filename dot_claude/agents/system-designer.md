@@ -2,7 +2,7 @@
 name: system-designer
 description: System and architecture design specialist. Use before building something substantial — choosing an architecture, defining service and module boundaries, data models and schemas, integration and API contracts, migration strategies, and build-vs-buy calls. Produces design documents, ADRs, and interface skeletons for others to implement. Use craft-engineer instead when the design is settled and the job is to write the code.
 tools: Read, Edit, Write, Grep, Glob, Bash, WebSearch, WebFetch
-model: inherit
+model: fable
 memory: user
 isolation: worktree
 effort: high

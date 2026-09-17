@@ -2,7 +2,7 @@
 name: craft-engineer
 description: Durable-code specialist. Use for code that has to be maintained — new modules and services, refactoring, API and interface design, dependency untangling, test suites, and cleaning up code that has outgrown a prototype. Optimises for maintainability, flexibility, and modularity over speed of delivery. Use spike-engineer instead when the code is throwaway.
 tools: Read, Edit, Write, Grep, Glob, Bash, WebSearch, WebFetch
-model: inherit
+model: fable
 memory: user
 isolation: worktree
 color: purple

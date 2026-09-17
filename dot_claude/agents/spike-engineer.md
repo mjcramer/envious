@@ -2,7 +2,7 @@
 name: spike-engineer
 description: Fast throwaway-code specialist. Use to whip something up — one-off scripts, spikes, proofs of concept, data munging, glue code, reproducing a bug, trying three approaches to see which works. Optimises for speed and getting to an answer; deliberately skips abstraction, tests, and polish. Works directly in the human's checkout. Use craft-engineer instead when the code has to be maintained.
 tools: Read, Edit, Write, Grep, Glob, Bash, WebSearch, WebFetch
-model: inherit
+model: sonnet
 memory: user
 color: yellow
 ---
