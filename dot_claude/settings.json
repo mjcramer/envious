@@ -1,0 +1,265 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "agent": "orchestrator",
+  "model": "opus",
+  "effortLevel": "high",
+  "skipDangerousModePermissionPrompt": true,
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh",
+    "padding": 0
+  },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "~/.claude/subagent-statusline.sh"
+  },
+  "worktree": {
+    "baseRef": "head"
+  },
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": [
+      "Bash(amtool check-config *)",
+      "Bash(awk:*)",
+      "Bash(az:*)",
+      "Bash(cargo:*)",
+      "Bash(cat:*)",
+      "Bash(cd:*)",
+      "Bash(checkov *)",
+      "Bash(cp:*)",
+      "Bash(crew diff *)",
+      "Bash(crew list *)",
+      "Bash(crew log *)",
+      "Bash(crew merge-cmd *)",
+      "Bash(crew path *)",
+      "Bash(curl:*)",
+      "Bash(databricks:*)",
+      "Bash(dmesg *)",
+      "Bash(docker:*)",
+      "Bash(echo:*)",
+      "Bash(evtest *)",
+      "Bash(find:*)",
+      "Bash(gh:*)",
+      "Bash(git:*)",
+      "Bash(gitleaks *)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(helm diff *)",
+      "Bash(helm lint *)",
+      "Bash(helm template *)",
+      "Bash(jar:*)",
+      "Bash(javap:*)",
+      "Bash(journalctl *)",
+      "Bash(kill:*)",
+      "Bash(kubectl:*)",
+      "Bash(ls:*)",
+      "Bash(lsblk *)",
+      "Bash(lscpu *)",
+      "Bash(lshw *)",
+      "Bash(lsmod *)",
+      "Bash(lspci *)",
+      "Bash(lsusb *)",
+      "Bash(make:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(mvn:*)",
+      "Bash(nc:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(pip:*)",
+      "Bash(pkill:*)",
+      "Bash(promtool check *)",
+      "Bash(pwd)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(rm:*)",
+      "Bash(rmdir:*)",
+      "Bash(semgrep *)",
+      "Bash(smartctl *)",
+      "Bash(sort:*)",
+      "Bash(tail:*)",
+      "Bash(terraform:*)",
+      "Bash(tfsec *)",
+      "Bash(tofu plan *)",
+      "Bash(tofu validate *)",
+      "Bash(touch:*)",
+      "Bash(tree:*)",
+      "Bash(trivy *)",
+      "Bash(udevadm info *)",
+      "Bash(udevadm monitor *)",
+      "Bash(uname *)",
+      "Bash(unzip:*)",
+      "Bash(wget:*)",
+      "Bash(xargs:*)",
+      "Edit(**)",
+      "EnterWorktree",
+      "Read(**)",
+      "Read(/tmp)",
+      "Skill(update-config)",
+      "mcp__claude_ai_Notion__notion-create-pages",
+      "mcp__claude_ai_Notion__notion-fetch",
+      "mcp__claude_ai_Notion__notion-search",
+      "mcp__claude_ai_Notion__notion-update-page"
+    ],
+    "ask": [
+      "Bash(crew task *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr review *)",
+      "Bash(git push *)",
+      "Bash(git reset *)",
+      "Bash(helm install *)",
+      "Bash(helm upgrade *)",
+      "Bash(kubectl apply *)",
+      "Bash(kubectl patch *)",
+      "Bash(kubectl rollout *)",
+      "Bash(ssh:*)",
+      "Bash(sudo:*)",
+      "Bash(terraform apply *)",
+      "Bash(tofu apply *)"
+    ],
+    "deny": [
+      "Bash(gh alias set *)",
+      "Bash(gh api *--method PUT*)",
+      "Bash(gh api *--method put*)",
+      "Bash(gh api *--method=PUT*)",
+      "Bash(gh api *-X PUT*)",
+      "Bash(gh api *-XPUT*)",
+      "Bash(gh api *branches/*/protection*)",
+      "Bash(gh api *rulesets*)",
+      "Bash(gh api graphql*)",
+      "Bash(gh pr merge *)",
+      "Bash(git branch -D *)",
+      "Bash(git config *insteadOf*)",
+      "Bash(git config *remote.*.url*)",
+      "Bash(git merge *--ff-only*)",
+      "Bash(git merge *--squash*)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git remote *)",
+      "Bash(git remote set-branches *)",
+      "Bash(git worktree remove --force *)",
+      "Bash(helm uninstall *)",
+      "Bash(kubectl delete namespace *)",
+      "Bash(kubectl delete ns *)",
+      "Bash(mv * ~/.claude/*)",
+      "Bash(mv ~/.claude/*)",
+      "Bash(rm -r* ~/.claude*)",
+      "Bash(rm ~/.claude/*)",
+      "Bash(terraform destroy *)",
+      "Bash(tofu destroy *)",
+      "Edit(**/.mise.toml)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Edit(./.mise.toml)",
+      "Edit(~/.claude/**)",
+      "Read(**/*.key)",
+      "Read(**/*.pem)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.mise.local.toml)",
+      "Read(**/.mise.toml)",
+      "Read(**/.ssh/**)",
+      "Read(**/id_ed25519*)",
+      "Read(**/id_rsa*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./.mise.toml)",
+      "Read(~/.aws/credentials)",
+      "Read(~/.kube/config)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/title.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/title.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '\\a'"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/title.sh"
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/title.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/guard-infra.py"
+          }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/bin/crew hook-create"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/bin/crew hook-remove"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "infra-engineer|hardware-engineer|system-designer|craft-engineer|spike-engineer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/bin/crew hook-stop"
+          }
+        ]
+      }
+    ]
+  }
+}
