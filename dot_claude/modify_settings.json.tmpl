@@ -223,8 +223,18 @@ SETTINGS = {
 
     # ---- hooks ---------------------------------------------------------------------------
     "hooks": {
+        "SessionStart": [
+            {"hooks": [{"type": "command", "command": "~/.claude/hooks/title.sh"}]}
+        ],
+        "UserPromptSubmit": [
+            {"hooks": [{"type": "command", "command": "~/.claude/hooks/title.sh"}]}
+        ],
         "Stop": [
-            {"hooks": [{"type": "command", "command": "printf '\\a'"}]}
+            {"hooks": [{"type": "command", "command": "printf '\\a'"}]},
+            {"hooks": [{"type": "command", "command": "~/.claude/hooks/title.sh"}]}
+        ],
+        "CwdChanged": [
+            {"hooks": [{"type": "command", "command": "~/.claude/hooks/title.sh"}]}
         ],
         "PreToolUse": [
             {"matcher": "Bash",
