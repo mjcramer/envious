@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents working with code in this repository. It is the single source of truth for agent instructions; tool-specific files (e.g. `CLAUDE.md`) should only reference it.
 
 ## What this repo is
 

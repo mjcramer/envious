@@ -4,7 +4,7 @@
 #
 # guard-infra.py:       {{ include "dot_claude/hooks/executable_guard-infra.py" | sha256sum }}
 # crew:                 {{ include "dot_claude/bin/executable_crew" | sha256sum }}
-# modify_settings.json: {{ include "dot_claude/modify_settings.json.tmpl" | sha256sum }}
+# settings.json:        {{ include "dot_claude/settings.json" | sha256sum }}
 # CLAUDE.md:            {{ include "dot_claude/CLAUDE.md" | sha256sum }}
 set -uo pipefail
 
@@ -64,7 +64,7 @@ run_crew() { python3 "$CREW" "$@" >"$OUT" 2>"$ERR"; rc=$?; }
 
 for a in "" help -h --help; do
   run_crew ${a:+"$a"}
-  if [ "$rc" -eq 0 ] && [ ! -s "$ERR" ] && grep -q 'persistent per-agent git workspaces' "$OUT"; then
+  if [ "$rc" -eq 0 ] && [ ! -s "$ERR" ] && grep -q 'git workspaces for Claude Code subagents' "$OUT"; then
     ok "crew ${a:-(no args)} prints usage on stdout, exit 0"
   else
     bad "crew ${a:-(no args)} gave rc=$rc (want 0, usage on stdout, stderr empty)"
@@ -113,7 +113,7 @@ esac
 
 echo scratch > "$WS/note.txt"
 run_crew_hook hook-stop \
-  "$(printf '{"cwd":"%s","agent_type":"craft-engineer","last_assistant_message":"selftest iteration"}' "$WS")"
+  "$(printf '{"cwd":"%s","agent_type":"craft-engineer","last_assistant_message":"selftest run"}' "$WS")"
 [ "$rc" -eq 0 ] && [ ! -s "$OUT" ] \
   && ok "hook-stop keeps stdout empty, exit 0" \
   || bad "hook-stop gave rc=$rc and $(wc -c <"$OUT" | tr -d ' ') bytes on stdout (want 0 and 0)"
@@ -128,9 +128,33 @@ LINK="$WSR/repo.craft-engineer"
   && ok "hook-stop links repo.craft-engineer -> $(basename "$WS")" \
   || bad "hook-stop did not link repo.craft-engineer at the workspace"
 
-git -C "$WS" log --oneline -1 2>/dev/null | grep -q '\[craft-engineer #1\]' \
-  && ok "hook-stop commits the iteration in the workspace" \
-  || bad "hook-stop did not commit the workspace iteration"
+git -C "$WS" log --oneline -1 2>/dev/null | grep -qF '[craft-engineer] selftest run' \
+  && ok "hook-stop commits what the agent left in the workspace" \
+  || bad "hook-stop did not commit the workspace's leftovers"
+
+# The CLI finds an agent's workspace from its branch name, since the directory is named
+# after the generated id. Ask from the main checkout, where nothing else gives it away.
+( cd "$R" && AGENT_WS_ROOT="$WSR" python3 "$CREW" path craft-engineer ) >"$OUT" 2>"$ERR"; rc=$?
+[ "$rc" -eq 0 ] && [ "$(cd "$(cat "$OUT")" 2>/dev/null && pwd -P)" = "$(cd "$WS" && pwd -P)" ] \
+  && ok "crew path finds craft-engineer's workspace from its branch" \
+  || bad "crew path craft-engineer gave rc=$rc, '$(cat "$OUT")' (want $WS)"
+
+( cd "$R" && AGENT_WS_ROOT="$WSR" python3 "$CREW" list ) >"$OUT" 2>"$ERR"; rc=$?
+[ "$rc" -eq 0 ] && grep -q '^craft-engineer  *agent/craft-engineer/' "$OUT" \
+  && ok "crew list names the workspace's agent from its branch" \
+  || bad "crew list gave rc=$rc and did not list craft-engineer"
+
+# crew diff is the preview: committed and uncommitted work alike, against the base the
+# workspace was cut from by default, or against a branch named on the command line.
+echo edited >> "$WS/note.txt"; echo new > "$WS/draft.txt"
+git -C "$R" branch other
+for against in "" other; do
+  ( cd "$R" && AGENT_WS_ROOT="$WSR" python3 "$CREW" diff craft-engineer ${against:+"$against"} ) >"$OUT" 2>"$ERR"; rc=$?
+  [ "$rc" -eq 0 ] && grep -q '^+scratch$' "$OUT" && grep -q '^+edited$' "$OUT" && grep -q '^draft.txt$' "$OUT" \
+    && ok "crew diff craft-engineer ${against:-(base)} shows committed, uncommitted and new work" \
+    || bad "crew diff craft-engineer ${against:-(base)} gave rc=$rc without the expected changes"
+done
+git -C "$WS" checkout -q -- note.txt; rm -f "$WS/draft.txt"
 
 run_crew_hook hook-remove "$(printf '{"cwd":"%s","worktree_path":"%s"}' "$R" "$WS")"
 [ "$rc" -eq 0 ] && [ ! -s "$OUT" ] && [ -d "$WS" ] \
@@ -140,9 +164,9 @@ run_crew_hook hook-remove "$(printf '{"cwd":"%s","worktree_path":"%s"}' "$R" "$W
 echo scratch > "$R/scratch.py"
 run_crew_hook hook-stop \
   "$(printf '{"cwd":"%s","agent_type":"spike-engineer","last_assistant_message":"selftest"}' "$R")"
-git -C "$R" log --oneline -1 2>/dev/null | grep -q '\[spike-engineer #1\]' \
+git -C "$R" log --oneline -1 2>/dev/null | grep -qF '[spike-engineer] selftest' \
   && ok "crew commits spike-engineer's finish in the checkout" \
-  || bad "crew did not commit the in-checkout iteration"
+  || bad "crew did not commit spike-engineer's finish in the checkout"
 
 # A payload naming no agent must be a no-op, not a commit in whatever repo we happen to be
 # in. Run it from inside the workspace with the tree dirty: that is where a fallback to

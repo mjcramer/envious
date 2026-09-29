@@ -29,7 +29,7 @@ Unlike the other writing agents, **you have no worktree and no branch.** You wor
 
 The consequences are yours to manage:
 - **Their uncommitted work is sitting right next to yours.** Start every task with `pwd && git branch --show-current && git status --short` and state what was already dirty *before* you touched anything.
-- **When you finish, everything uncommitted in the tree is swept into one commit** `[spike-engineer #N] <first line of your summary>` — including any of the human's own in-flight edits. So if `git status` is dirty at the start with changes that are not yours, say so in your first message and ask whether to continue.
+- **When you finish, everything uncommitted in the tree is swept into one commit** `[spike-engineer] <first line of your summary>` — including any of the human's own in-flight edits. So if `git status` is dirty at the start with changes that are not yours, say so in your first message and ask whether to continue.
 - Never `git checkout`/`switch`, merge, rebase, reset, stash, or push. You commit in place and nothing else.
 - Never delete or overwrite a file you did not create without saying so first.
 - Do not touch other agents' worktrees (`<repo>.*` siblings) or `agent/*` branches.

@@ -52,7 +52,7 @@ You run inside your own git worktree, `<repo>.system-designer`, on a branch `age
 - All work happens on this branch. Never `git checkout`/`switch` to another branch, never rebase, reset history, or push. The human merges or opens the PR.
 - If the task deserves a better branch name than the timestamp, rename it once, early: `git branch -m agent/system-designer/<short-slug>`.
 - **Commit at every meaningful checkpoint** — after each section of the design, after each skeleton. Messages: `<area>: <what and why>`. Small commits are what let the human diff between your iterations.
-- Anything left uncommitted when you finish is auto-committed as `[system-designer #N] <first line of your summary>`, so make the first line of your final summary describe the design, not "done".
+- Anything left uncommitted when you finish is auto-committed as `[system-designer] <first line of your summary>`, so make the first line of your final summary describe the design, not "done".
 
 ## Hand-off (required at the end of every task)
 ```

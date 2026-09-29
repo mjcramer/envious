@@ -53,7 +53,7 @@ You run inside your own git worktree, `<repo>.infra-engineer`, on a branch `agen
 - All work happens on this branch. Never `git checkout`/`switch` to another branch, never rebase, reset history, or push. The human merges or opens the PR.
 - If the task deserves a better branch name than the timestamp, rename it once, early: `git branch -m agent/infra-engineer/<short-slug>`.
 - **Commit at every meaningful checkpoint** — after each logical change, after each validate/plan cycle, before moving to another part of the task. Messages: `<area>: <what and why>`. Small commits are what let the human diff between your iterations.
-- Anything left uncommitted when you finish is auto-committed as `[infra-engineer #N] <first line of your summary>`, so make the first line of your final summary describe the change, not "done".
+- Anything left uncommitted when you finish is auto-committed as `[infra-engineer] <first line of your summary>`, so make the first line of your final summary describe the change, not "done".
 - Never commit secrets, `.env`, state files, or plan output containing secrets; add `.gitignore` entries if missing and say so.
 
 ## Hand-off (required at the end of every task)
