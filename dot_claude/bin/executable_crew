@@ -31,8 +31,16 @@ CLI (run from anywhere inside the repo or a workspace):
   crew path <agent>              print the workspace path:  cd "$(crew path craft-engineer)"
   crew diff <agent> [branch]     what the workspace would bring in, against the branch it
                                  was cut from, or against the one you name
+  crew clean [<agent>]           remove the workspaces that hold nothing of their own: every
+                                 commit is on another branch too, and nothing is uncommitted
+  crew clean --all [<agent>]     remove them all, unmerged and uncommitted work included
 
 <agent> means that agent's most recent workspace; `crew list` shows the earlier ones.
+
+`crew clean` is for you, not for agents: it shows what it would remove and what would be
+lost, and removes nothing until you answer yes at a terminal. Without a terminal it only
+shows the list. It removes the workspace and its agent/ branch; a branch of any other
+name is left alone.
 
 Override the workspace parent directory with AGENT_WS_ROOT (default: sibling of the repo,
 falling back to ~/.claude/workspaces if the sibling location is not writable).
@@ -566,6 +574,89 @@ def cmd_diff(args):
     return 0
 
 
+def only_here(path, branch):
+    """How many of the workspace's commits removing it would lose: those on no branch
+    that stays behind. None when git cannot say.
+
+    Other agent/ branches do not count as staying behind. They may be removed in the
+    same sweep, and two workspaces at the same commit would otherwise vouch for each
+    other. A branch of any other name is not deleted, so it loses nothing."""
+    if branch and not branch.startswith(BRANCH_PREFIX):
+        return 0
+    out = git("rev-list", "--count", branch or "HEAD", "--not", f"--exclude={BRANCH_PREFIX}*",
+              "--branches", "--remotes", cwd=path, check=False)
+    return int(out) if out.isdigit() else None
+
+
+def cmd_clean(args):
+    everything = "--all" in args
+    names = [a for a in args if a != "--all"]
+    if len(names) > 1 or any(a.startswith("-") for a in names):
+        raise SystemExit("usage: crew clean [--all] [<agent>]")
+    main = main_checkout(os.getcwd())
+    here = Path(os.getcwd()).resolve()
+    prefix = f"{repo_name(main)}."
+
+    remove, keep = [], []
+    for p, br in worktrees(main):
+        if not p.name.startswith(prefix):
+            continue
+        if names and (branch_agent(br) or p.name[len(prefix):]) != names[0]:
+            continue
+        unmerged = only_here(p, br)
+        at_stake = []
+        if unmerged is None:
+            at_stake.append("cannot tell whether its commits are anywhere else")
+        elif unmerged:
+            at_stake.append(f"{unmerged} commit{'s' if unmerged > 1 else ''} on no other branch")
+        if is_dirty(p):
+            at_stake.append("uncommitted changes")
+        if here == p.resolve() or p.resolve() in here.parents:
+            keep.append((p, br, "you are in it"))
+        elif at_stake and not everything:
+            keep.append((p, br, ", ".join(at_stake)))
+        else:
+            remove.append((p, br, ", ".join(at_stake)))
+
+    def show(title, rows, note):
+        if rows:
+            width = max(len(p.name) for p, _, _ in rows)
+            print(title)
+            for p, br, why in rows:
+                print(f"  {p.name.ljust(width)}  {br or '(detached)'}" + (f"  — {note}{why}" if why else ""))
+
+    show("keeping:", keep, "")
+    show("removing:", remove, "LOSES ")
+    if not remove:
+        print("nothing to remove" + (" (crew clean --all removes the ones kept)" if keep else ""))
+        return 0
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print("\nnothing removed: run this yourself at a terminal to confirm")
+        return 0
+    lost = sum(1 for _, _, why in remove if why)
+    ask = f"\nRemove {len(remove)} workspace{'s' if len(remove) > 1 else ''}"
+    ask += f", {lost} of them with work that exists nowhere else" if lost else ""
+    if input(f"{ask}? [y/N] ").strip().lower() not in ("y", "yes"):
+        print("nothing removed")
+        return 0
+
+    failed = 0
+    for p, br, _ in remove:
+        try:
+            git("worktree", "remove", *(["--force"] if everything else []), str(p), cwd=main)
+            if br.startswith(BRANCH_PREFIX):
+                git("branch", "-D", br, cwd=main)
+            print(f"removed {p.name}")
+        except RuntimeError as e:
+            failed += 1
+            print(f"could not remove {p.name}: {e}", file=sys.stderr)
+    for link in ws_root(main).glob(f"{prefix}*"):       # shortcuts left by older versions
+        if link.is_symlink() and not link.exists():
+            link.unlink()
+    git("worktree", "prune", cwd=main, check=False)
+    return 1 if failed else 0
+
+
 HELP_FLAGS = {"help", "-h", "--help"}
 
 
@@ -584,7 +675,7 @@ def main():
         except Exception as e:  # never let a hook crash silently
             log(f"error: {e}")
             return 1 if cmd == "hook-create" else 0
-    table = {"list": cmd_list, "path": cmd_path, "diff": cmd_diff}
+    table = {"list": cmd_list, "path": cmd_path, "diff": cmd_diff, "clean": cmd_clean}
     if cmd not in table:
         print(f"crew: unknown subcommand '{cmd}'\n"
               f"       valid: {', '.join(table)}\n"

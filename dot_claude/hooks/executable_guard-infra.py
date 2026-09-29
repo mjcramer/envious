@@ -238,6 +238,7 @@ DENY_PATTERNS = [
     (r"\bgit\s+(branch\s+(?-i:-D)|reset\s+--hard\s+origin)", "destructive git history operation"),
     (r"\bgit\s+worktree\s+remove\b.*(--force|-f\b)", "force-removing a worktree discards an agent's work"),
     (r"\bgit\s+branch\s+-[dD]\s+agent/", "deleting an agent branch"),
+    (r"\bcrew\s+clean\b", "removing agent workspaces is the human's call; crew clean is theirs to run"),
     # A merge without --no-ff leaves no merge commit, so `git log --merges` cannot show
     # where the change came from and `git revert -m 1` has nothing to revert. That is the
     # whole basis on which local merging was allowed.

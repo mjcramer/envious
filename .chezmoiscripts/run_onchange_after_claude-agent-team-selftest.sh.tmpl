@@ -50,6 +50,7 @@ guard() { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1" | pyt
 guard "terraform destroy"                 | grep -q '"deny"' && ok "guard denies terraform destroy" || bad "guard did not deny terraform destroy"
 guard "kubectl --context prod-w apply -f x" | grep -q '"ask"' && ok "guard asks on prod kubectl"   || bad "guard did not ask on prod kubectl"
 [ -z "$(guard 'terraform plan')" ]                            && ok "guard allows terraform plan"   || bad "guard blocked terraform plan"
+guard "crew clean --all"                  | grep -q '"deny"' && ok "guard denies crew clean"        || bad "guard did not deny crew clean"
 
 # 5. crew's CLI contract: exit code and which stream the output lands on.
 #    Load-bearing because Claude Code reads hook-create's stdout as the agent's working
@@ -200,6 +201,59 @@ run_crew_hook hook-stop '{}' "$WS"
   && [ "$(git -C "$WS" branch --show-current)" = "$BRANCH_BEFORE" ] \
   && ok "hook-stop ignores a payload that names no agent" \
   || bad "hook-stop acted on a payload with no agent_type (rc=$rc)"
+
+# crew clean removes workspaces, so it only acts when a person answers yes at a terminal.
+# At this point the craft-engineer workspace holds an unmerged commit and a stray file;
+# the infra-engineer one holds nothing that is not already on main.
+( cd "$R" && AGENT_WS_ROOT="$WSR" python3 "$CREW" clean --all ) >"$OUT" 2>"$ERR" </dev/null; rc=$?
+[ "$rc" -eq 0 ] && grep -q 'nothing removed' "$OUT" && [ -d "$WS" ] && [ -d "$NAMED" ] \
+  && ok "crew clean removes nothing without a terminal" \
+  || bad "crew clean acted without a terminal (rc=$rc)"
+
+# answer_crew <answer> <crew args...>: run crew at a terminal of its own and type the answer
+answer_crew() {
+  AGENT_WS_ROOT="$WSR" python3 - "$CREW" "$R" "$@" >"$OUT" 2>"$ERR" <<'PY'
+import os, pty, sys
+crew, repo, answer, *args = sys.argv[1:]
+pid, fd = pty.fork()
+if pid == 0:
+    os.chdir(repo)
+    os.execvp("python3", ["python3", crew, *args])
+seen, sent = b"", False
+while True:
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    seen += chunk
+    if not sent and b"[y/N]" in seen:
+        os.write(fd, answer.encode() + b"\n")
+        sent = True
+sys.stdout.write(seen.decode(errors="replace"))
+sys.exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))
+PY
+  rc=$?
+}
+
+answer_crew y clean
+[ "$rc" -eq 0 ] && [ ! -e "$NAMED" ] && [ -d "$WS" ] \
+  && ! git -C "$R" rev-parse -q --verify refs/heads/agent/infra-engineer/rotate-the-logs >/dev/null \
+  && ok "crew clean removes the merged workspace and its branch, keeps the unmerged one" \
+  || bad "crew clean gave rc=$rc; wanted repo.infra-engineer.rotate-the-logs gone and $(basename "$WS") kept"
+
+answer_crew n clean --all
+[ "$rc" -eq 0 ] && [ -d "$WS" ] \
+  && ok "crew clean --all removes nothing when the answer is no" \
+  || bad "crew clean --all removed a workspace after a no (rc=$rc)"
+
+answer_crew y clean --all
+[ "$rc" -eq 0 ] && [ ! -e "$WS" ] \
+  && ! git -C "$R" rev-parse -q --verify refs/heads/agent/craft-engineer/fix-the-widget >/dev/null \
+  && [ -z "$(git -C "$R" worktree list --porcelain | grep -c '^worktree ' | grep -v '^1$')" ] \
+  && ok "crew clean --all removes every workspace and agent branch" \
+  || bad "crew clean --all gave rc=$rc and left workspaces or branches behind"
 
 # 7. PATH hint (informational only)
 case ":$PATH:" in

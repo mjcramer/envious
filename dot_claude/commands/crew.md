@@ -44,3 +44,7 @@ this repository — say that rather than presenting it as a crash.
 
 - Never merge, rebase, push, or delete a branch or workspace as part of this
   command. It is read-only.
+- Never run `crew clean`. It removes workspaces and is the user's to run from
+  their own terminal. If they ask for a clean-up, tell them the command:
+  `crew clean` for workspaces whose work is all merged, `crew clean --all` for
+  every workspace, unmerged work included.
