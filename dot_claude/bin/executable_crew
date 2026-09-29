@@ -3,13 +3,17 @@
 crew — git workspaces for Claude Code subagents.
 
 Each run of an agent that has `isolation: worktree` in its frontmatter gets its own git
-worktree next to the main checkout, on its own branch cut from the branch you are working
-on. Claude Code does not say which agent a worktree is for when it asks for one, so the
-workspace starts out named after a generated id:  <repo>.agent-<id>  on branch
-agent/agent-<id>/<yyyymmdd-hhmm>. When the agent stops, the branch is renamed to
-agent/<agent>/<yyyymmdd-hhmm>  and the symlink  <repo>.<agent>  (e.g.
-~/src/platform.infra-engineer) is pointed at the workspace, so there is one predictable
-path per agent: its most recent run. Workspaces are never removed.
+worktree next to the main checkout, cut from the branch you are working on and named
+after the agent and the task it was given:
+
+    workspace   <repo>.<agent>.<task>      e.g. ~/src/platform.infra-engineer.ci-free-disk
+    branch      agent/<agent>/<task>
+
+Claude Code does not say which agent a worktree is for when it asks for one, only a
+generated id. crew finds out by reading the launch that is in flight from the session
+transcript. When it cannot, the workspace starts out as  <repo>.agent-<id>  and is given
+its proper name when the agent stops, which is also when a wrong guess is put right.
+Workspaces are never removed.
 
 Whatever the agent leaves uncommitted is committed when it stops, as  [<agent>] <summary>.
 
@@ -20,7 +24,7 @@ stop, so there is a boundary to find with  git log -F --grep '[<agent>]'.
 Hook entry points (wired in ~/.claude/settings.json):
   crew hook-create   WorktreeCreate  -> creates the workspace, prints its path
   crew hook-remove   WorktreeRemove  -> keeps the workspace (prunes an empty branch)
-  crew hook-stop     SubagentStop    -> commits leftovers, names the branch and the symlink
+  crew hook-stop     SubagentStop    -> commits leftovers, settles the workspace's names
 
 CLI (run from anywhere inside the repo or a workspace):
   crew list                      workspaces, their branches, ahead/behind
@@ -33,15 +37,20 @@ CLI (run from anywhere inside the repo or a workspace):
 Override the workspace parent directory with AGENT_WS_ROOT (default: sibling of the repo,
 falling back to ~/.claude/workspaces if the sibling location is not writable).
 """
+import fcntl
 import json
 import os
 import re
 import subprocess
 import sys
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 BRANCH_PREFIX = "agent/"
+GENERATED_NAME = re.compile(r"agent-[0-9a-f]{8,}")     # what Claude Code calls a subagent's worktree
+STAMP = re.compile(r"\d{8}-\d{4}(-\d+)?")              # a branch nobody has named yet
+TRANSCRIPT_TAIL = 4 * 1024 * 1024                      # a launch in flight is near the end
 
 # Agents that deliberately work in the human's checkout instead of their own worktree.
 # They have no branch; their finish is committed in place so there is a readable boundary.
@@ -131,12 +140,122 @@ def resolve_base(main, base_ref):
     return head_branch, git("rev-parse", "HEAD", cwd=main)
 
 
+def branch_exists(main, branch):
+    return bool(git("rev-parse", "--verify", "-q", f"refs/heads/{branch}", cwd=main, check=False))
+
+
 def new_branch_name(main, agent):
     base_name = f"{BRANCH_PREFIX}{agent}/{datetime.now().strftime('%Y%m%d-%H%M')}"
     name, i = base_name, 2
-    while git("rev-parse", "--verify", "-q", f"refs/heads/{name}", cwd=main, check=False):
+    while branch_exists(main, name):
         name, i = f"{base_name}-{i}", i + 1
     return name
+
+
+def task_slug(text):
+    return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")[:40].rstrip("-")
+
+
+def free_task(main, agent, task, keep=None):
+    """`task`, or task-2, task-3..., whichever has neither a workspace nor a branch yet.
+    `keep` is a branch that is already this workspace's own, so it is not in the way."""
+    name, i = task, 2
+    while ws_path(main, f"{agent}.{name}").exists() or (
+            f"{BRANCH_PREFIX}{agent}/{name}" != keep and branch_exists(main, f"{BRANCH_PREFIX}{agent}/{name}")):
+        name, i = f"{task}-{i}", i + 1
+    return name
+
+
+@contextmanager
+def locked(main):
+    """One hook at a time per repo: agents launched together ask for worktrees together,
+    and each has to see which launch the others have already taken."""
+    common = git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=main)
+    with open(Path(common) / "crew.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+# ----------------------------------------------------------------------------- launches
+def pending_launches(transcript):
+    """Agent tool calls in a session transcript that have no result yet, oldest first.
+
+    WorktreeCreate fires while the launch is in flight: the call is already in the
+    transcript and its result is not. The transcript format is not documented, so
+    anything unexpected means no launches, and the caller falls back."""
+    try:
+        with open(os.path.expanduser(transcript), "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - TRANSCRIPT_TAIL))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+    except (OSError, TypeError):
+        return []
+    calls, done = [], set()
+    for line in lines:
+        if '"tool_use"' not in line and '"tool_result"' not in line:
+            continue
+        try:
+            content = json.loads(line)["message"]["content"]
+        except Exception:
+            continue                                # a partial first line, or another shape
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") in ("Agent", "Task"):
+                calls.append(block)
+            elif block.get("type") == "tool_result":
+                done.add(block.get("tool_use_id"))
+    return [c for c in calls if c.get("id") and c["id"] not in done]
+
+
+def wants_worktree(call, cwd):
+    """Does this launch get a worktree? Only those can be what WorktreeCreate is for."""
+    args = call.get("input") or {}
+    if args.get("isolation") == "worktree":
+        return True
+    for d in (Path(cwd) / ".claude" / "agents", Path.home() / ".claude" / "agents"):
+        try:
+            frontmatter = (d / f"{args.get('subagent_type')}.md").read_text().split("---")[1]
+        except (OSError, IndexError):
+            continue
+        return bool(re.search(r"^isolation:\s*worktree\s*$", frontmatter, re.MULTILINE))
+    return False
+
+
+def claimed_launches(main):
+    out = git("config", "--get-regexp", r"^branch\..*\.agent-launch$", cwd=main, check=False)
+    return {line.split()[-1] for line in out.splitlines() if line.strip()}
+
+
+def next_launch(main, payload):
+    """(agent, task, launch id) for the launch this worktree is most likely for, or None.
+
+    Agents launched in the same message are taken in the order they were written. That
+    is a guess when there are several, which is why SubagentStop checks it."""
+    taken = claimed_launches(main)
+    for call in pending_launches(payload.get("transcript_path")):
+        args = call.get("input") or {}
+        agent = safe_slug(args.get("subagent_type") or "")
+        if call["id"] in taken or not args.get("subagent_type") or agent in IN_CHECKOUT_AGENTS:
+            continue
+        if wants_worktree(call, payload.get("cwd") or os.getcwd()):
+            return agent, task_slug(args.get("description")) or datetime.now().strftime("%Y%m%d-%H%M"), call["id"]
+    return None
+
+
+def launch_record(payload):
+    """What Claude Code noted about this agent's launch: its description, and the id of
+    the call that launched it. Kept beside the agent's transcript; not documented, so
+    fall back to the description in the payload, and then to nothing."""
+    try:
+        meta = Path(os.path.expanduser(payload["agent_transcript_path"])).with_suffix(".meta.json")
+        return json.loads(meta.read_text())
+    except Exception:
+        pass
+    for task in payload.get("background_tasks") or []:
+        if isinstance(task, dict) and task.get("id") == payload.get("agent_id"):
+            return {"description": task.get("description")}
+    return {}
 
 
 def copy_worktreeinclude(main, dest):
@@ -174,31 +293,9 @@ def workspace_name(p):
 
     `name` is the only per-invocation identifier available: "agent-<agent_id>" for a
     subagent, or the given name for EnterWorktree / `claude --worktree`. The real agent
-    type only shows up at SubagentStop, which is where the branch is renamed and the
-    stable symlink is pointed at this workspace."""
+    type is in the payload only at SubagentStop; before that it has to be read from the
+    launch in the transcript (see next_launch)."""
     return p.get("name") or "worktree"
-
-
-def link_agent_workspace(main, agent, ws):
-    """Point <repo>.<agent> at the workspace this agent most recently ran in.
-
-    Workspaces are created per invocation because nothing at WorktreeCreate identifies
-    the agent, so their directory names carry a generated id. The symlink is what gives
-    you one predictable path per agent to cd into. Never clobbers a real directory."""
-    link = ws_root(main) / f"{repo_name(main)}.{agent}"
-    try:
-        if link.is_symlink():
-            if link.readlink() == ws:
-                return link
-            link.unlink()
-        elif link.exists():
-            return None                      # a real worktree lives there; leave it
-        link.symlink_to(ws, target_is_directory=True)
-        log(f"{link.name} -> {ws.name}")
-        return link
-    except OSError as e:
-        log(f"could not link {link.name}: {e}")
-        return None
 
 
 def worktrees(main):
@@ -220,8 +317,8 @@ def branch_agent(branch):
 
 def find_workspace(cwd, agent):
     """(path, branch) of the workspace `agent` most recently worked in, given any cwd
-    inside the repo or a workspace. SubagentStop renames the branch to agent/<agent>/...,
-    so the branch is what says whose workspace it is, whatever the directory is called."""
+    inside the repo or a workspace. The branch, agent/<agent>/..., is what says whose
+    workspace it is, whatever the directory is called."""
     if agent in IN_CHECKOUT_AGENTS:
         raise SystemExit(f"{agent} works in your checkout and has no workspace; "
                          f"find its commits with: git log -F --grep '[{agent}]'")
@@ -236,15 +333,32 @@ def find_workspace(cwd, agent):
 def hook_create(payload):
     cwd = payload.get("cwd") or os.getcwd()
     main = main_checkout(cwd)
+    with locked(main):
+        path = create_workspace(main, payload)
+    print(path)  # stdout = the worktree path Claude Code will use as cwd
+    return 0
+
+
+def create_workspace(main, payload):
     agent = safe_slug(workspace_name(payload))
     path = ws_path(main, agent)
     base_branch, base_sha = resolve_base(main, payload.get("base_ref"))
+    launch = next_launch(main, payload) if GENERATED_NAME.fullmatch(agent) else None
 
-    if not path.exists():
+    if launch:
+        agent, task, launch_id = launch
+        task = free_task(main, agent, task)
+        path, branch = ws_path(main, f"{agent}.{task}"), f"{BRANCH_PREFIX}{agent}/{task}"
+        git("worktree", "add", str(path), "-b", branch, base_sha, cwd=main)
+        set_branch_base(path, branch, base_branch)
+        git("config", f"branch.{branch}.agent-launch", launch_id, cwd=path)
+        log(f"created {path} on {branch} (base {base_branch})")
+    elif not path.exists():
         branch = new_branch_name(main, agent)
         git("worktree", "add", str(path), "-b", branch, base_sha, cwd=main)
         set_branch_base(path, branch, base_branch)
-        log(f"created {path} on {branch} (base {base_branch})")
+        log(f"created {path} on {branch} (base {base_branch}); "
+            f"could not tell which agent it is for, so it is named when the agent stops")
     else:
         # Only a worktree with a fixed name gets here (EnterWorktree, `claude --worktree`);
         # a subagent's name is new on every run. Carry on where it left off -- unless that
@@ -259,9 +373,7 @@ def hook_create(payload):
         else:
             log(f"reusing {path}: continuing {cur}")
     copy_worktreeinclude(main, path)
-
-    print(path)  # stdout = the worktree path Claude Code will use as cwd
-    return 0
+    return path
 
 
 def commit_leftovers(path, agent, summary):
@@ -311,6 +423,29 @@ def adopt_branch(path, branch, agent):
     return name
 
 
+def settle(main, path, branch, agent, launch):
+    """Give a workspace the names it should have had from the start: branch
+    agent/<agent>/<task> and directory <repo>.<agent>.<task>. Returns (path, branch).
+
+    Only for a workspace crew had to name blind, or named after the wrong launch. The
+    directory moves, so an agent that is later resumed by id will not find the old path."""
+    slug = branch.rsplit("/", 1)[-1]
+    if branch_agent(branch) == agent and not STAMP.fullmatch(slug):
+        task = free_task(main, agent, slug, keep=branch)       # the agent named its branch
+    else:
+        task = free_task(main, agent, task_slug(launch.get("description")) or slug)
+    want = f"{BRANCH_PREFIX}{agent}/{task}"
+    if branch != want:
+        base = branch_base(path, branch)
+        git("branch", "-m", branch, want, cwd=path)
+        if base:
+            set_branch_base(path, want, base)
+    new_path = ws_path(main, f"{agent}.{task}")
+    git("worktree", "move", str(path), str(new_path), cwd=main)
+    log(f"{path.name} -> {new_path.name} on {want}")
+    return new_path, want
+
+
 def hook_stop(payload):
     # This hook commits and renames branches, so it acts only on a payload that names
     # both the agent and its working directory. No guessing, no os.getcwd() fallback:
@@ -337,9 +472,18 @@ def hook_stop(payload):
     branch = current_branch(path)
     if not branch.startswith(BRANCH_PREFIX):
         return 0
-    branch = adopt_branch(path, branch, agent)
     commit_leftovers(path, agent, summary)
-    link_agent_workspace(main, agent, path)
+    with locked(main):
+        launch = launch_record(payload)
+        labelled = git("config", "--get", f"branch.{branch}.agent-launch", cwd=path, check=False)
+        blind = bool(GENERATED_NAME.fullmatch(path.name[len(repo_name(main)) + 1:]))
+        wrong = bool(labelled and launch.get("toolUseId") and labelled != launch["toolUseId"])
+        if blind or wrong:
+            path, branch = settle(main, path, branch, agent, launch)
+            if launch.get("toolUseId"):
+                git("config", f"branch.{branch}.agent-launch", launch["toolUseId"], cwd=path)
+        else:
+            branch = adopt_branch(path, branch, agent)
     log(f"{agent} finished on {branch} ({git('rev-parse', '--short', 'HEAD', cwd=path)})")
     return 0
 

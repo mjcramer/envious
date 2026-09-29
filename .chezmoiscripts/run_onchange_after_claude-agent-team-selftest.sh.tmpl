@@ -79,10 +79,9 @@ else
 fi
 
 # 6. crew's hooks, end to end on a scratch repo under $T. The payloads are the shape Claude
-#    Code really sends: at WorktreeCreate `name` is the only per-invocation identifier and
-#    `agent_type` is the *calling* session's agent, so the workspace is named after `name`
-#    and only SubagentStop knows the real type — that is where the branch is renamed and
-#    the <repo>.<agent> symlink is pointed at the workspace.
+#    Code really sends: at WorktreeCreate `name` is a generated id and `agent_type` is the
+#    *calling* session's agent. So crew reads the agent and the task from the launch that
+#    is in flight in the session transcript, and names the workspace <repo>.<agent>.<task>.
 R="$T/repo"; WSR="$T/ws"             # scratch repo and its workspace root
 AGENT_ID=agent-a671a08082793dbaa     # synthetic; the id shape a subagent arrives with
 # crew commits without setting an identity, so give its git subprocesses one
@@ -96,20 +95,28 @@ run_crew_hook() {
   printf '%s' "$2" | (cd "${3:-$R}" && AGENT_WS_ROOT="$WSR" python3 "$CREW" "$1") >"$OUT" 2>"$ERR"; rc=$?
 }
 
+# A session transcript with one launch in flight: its Agent call is written, its result
+# is not. The earlier launch has its result, so it is not the one being asked about.
+TRANSCRIPT="$T/session.jsonl"
+cat >"$TRANSCRIPT" <<'JSONL'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_earlier","name":"Agent","input":{"subagent_type":"infra-engineer","description":"An earlier task","isolation":"worktree","prompt":"x"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_earlier","content":"launched"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_selftest","name":"Agent","input":{"subagent_type":"craft-engineer","description":"Fix the Widget!","isolation":"worktree","prompt":"x"}}]}}
+JSONL
+
 run_crew_hook hook-create \
-  "$(printf '{"cwd":"%s","base_ref":"head","agent_type":"orchestrator","name":"%s"}' "$R" "$AGENT_ID")"
+  "$(printf '{"cwd":"%s","base_ref":"head","agent_type":"orchestrator","name":"%s","transcript_path":"%s"}' "$R" "$AGENT_ID" "$TRANSCRIPT")"
 WS="$(cat "$OUT")"
-if [ "$rc" -eq 0 ] && [ "$(wc -l <"$OUT")" -eq 1 ] && [ -d "$WS" ] && [ "$(basename "$WS")" = "repo.$AGENT_ID" ]; then
-  ok "hook-create names the workspace from payload.name ($(basename "$WS")), path alone on stdout"
+if [ "$rc" -eq 0 ] && [ "$(wc -l <"$OUT")" -eq 1 ] && [ -d "$WS" ] && [ "$(basename "$WS")" = "repo.craft-engineer.fix-the-widget" ]; then
+  ok "hook-create names the workspace <repo>.<agent>.<task> ($(basename "$WS")), path alone on stdout"
 else
-  bad "hook-create gave rc=$rc, $(wc -l <"$OUT" | tr -d ' ') line(s) on stdout: $(tr '\n' ' ' <"$OUT")(want just <...>/repo.$AGENT_ID)"
+  bad "hook-create gave rc=$rc, $(wc -l <"$OUT" | tr -d ' ') line(s) on stdout: $(tr '\n' ' ' <"$OUT")(want just <...>/repo.craft-engineer.fix-the-widget)"
 fi
 [ -d "$WS" ] || WS="$T/no-workspace"   # keep the checks below inside $T even if that failed
 
-case "$(git -C "$WS" branch --show-current 2>/dev/null)" in
-  agent/$AGENT_ID/*) ok "hook-create branches agent/$AGENT_ID/<stamp>" ;;
-  *) bad "hook-create made branch '$(git -C "$WS" branch --show-current 2>/dev/null)' (want agent/$AGENT_ID/<stamp>)" ;;
-esac
+[ "$(git -C "$WS" branch --show-current 2>/dev/null)" = "agent/craft-engineer/fix-the-widget" ] \
+  && ok "hook-create branches agent/craft-engineer/fix-the-widget" \
+  || bad "hook-create made branch '$(git -C "$WS" branch --show-current 2>/dev/null)' (want agent/craft-engineer/fix-the-widget)"
 
 echo scratch > "$WS/note.txt"
 run_crew_hook hook-stop \
@@ -118,22 +125,35 @@ run_crew_hook hook-stop \
   && ok "hook-stop keeps stdout empty, exit 0" \
   || bad "hook-stop gave rc=$rc and $(wc -c <"$OUT" | tr -d ' ') bytes on stdout (want 0 and 0)"
 
-case "$(git -C "$WS" branch --show-current 2>/dev/null)" in
-  agent/craft-engineer/*) ok "hook-stop renames the branch to $(git -C "$WS" branch --show-current)" ;;
-  *) bad "hook-stop left branch '$(git -C "$WS" branch --show-current 2>/dev/null)' (want agent/craft-engineer/<stamp>)" ;;
-esac
-
-LINK="$WSR/repo.craft-engineer"
-[ -L "$LINK" ] && [ "$(cd "$LINK" && pwd -P)" = "$(cd "$WS" && pwd -P)" ] \
-  && ok "hook-stop links repo.craft-engineer -> $(basename "$WS")" \
-  || bad "hook-stop did not link repo.craft-engineer at the workspace"
+[ -d "$WS" ] && [ "$(git -C "$WS" branch --show-current 2>/dev/null)" = "agent/craft-engineer/fix-the-widget" ] \
+  && ok "hook-stop leaves a workspace that was named at creation where it is" \
+  || bad "hook-stop moved or renamed a workspace that already had its name"
 
 git -C "$WS" log --oneline -1 2>/dev/null | grep -qF '[craft-engineer] selftest run' \
   && ok "hook-stop commits what the agent left in the workspace" \
   || bad "hook-stop did not commit the workspace's leftovers"
 
-# The CLI finds an agent's workspace from its branch name, since the directory is named
-# after the generated id. Ask from the main checkout, where nothing else gives it away.
+# When the transcript does not give the launch away, the workspace starts out under the
+# generated id and gets its name when the agent stops, which is when the payload says
+# who it was and what it was doing.
+BLIND_ID=agent-b772b19193804ecbb
+run_crew_hook hook-create \
+  "$(printf '{"cwd":"%s","base_ref":"head","agent_type":"orchestrator","name":"%s"}' "$R" "$BLIND_ID")"
+BLIND="$(cat "$OUT")"
+[ "$rc" -eq 0 ] && [ -d "$BLIND" ] && [ "$(basename "$BLIND")" = "repo.$BLIND_ID" ] \
+  && ok "hook-create falls back to the generated name without a transcript" \
+  || bad "hook-create gave rc=$rc, '$(cat "$OUT")' (want <...>/repo.$BLIND_ID)"
+[ -d "$BLIND" ] || BLIND="$T/no-workspace"
+
+run_crew_hook hook-stop \
+  "$(printf '{"cwd":"%s","agent_type":"infra-engineer","agent_id":"b772","last_assistant_message":"done","background_tasks":[{"id":"b772","description":"Rotate the logs"}]}' "$BLIND")"
+NAMED="$WSR/repo.infra-engineer.rotate-the-logs"
+[ "$rc" -eq 0 ] && [ ! -s "$OUT" ] && [ -d "$NAMED" ] && [ ! -e "$BLIND" ] \
+  && [ "$(git -C "$NAMED" branch --show-current 2>/dev/null)" = "agent/infra-engineer/rotate-the-logs" ] \
+  && ok "hook-stop names a blind workspace repo.infra-engineer.rotate-the-logs" \
+  || bad "hook-stop gave rc=$rc and did not move repo.$BLIND_ID to repo.infra-engineer.rotate-the-logs"
+
+# The CLI finds an agent's workspace from its branch name. Ask from the main checkout.
 ( cd "$R" && AGENT_WS_ROOT="$WSR" python3 "$CREW" path craft-engineer ) >"$OUT" 2>"$ERR"; rc=$?
 [ "$rc" -eq 0 ] && [ "$(cd "$(cat "$OUT")" 2>/dev/null && pwd -P)" = "$(cd "$WS" && pwd -P)" ] \
   && ok "crew path finds craft-engineer's workspace from its branch" \
