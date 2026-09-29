@@ -65,6 +65,110 @@ def normalize(cmd: str):
     return raw, stripped
 
 
+# A blocked phrase that is only being talked about is not a command: the text of a commit
+# message, or the string a search is looking for. Matching those denied
+# `git commit -m "explain why terraform destroy is blocked"` and `grep -rn "drop table" .`
+# scrub() takes that text out before the patterns run. It is deliberately narrow. Anything
+# the shell would still execute or write to stays in: a word holding `$(...)` or backticks,
+# a redirection and its target, and every other command on the line.
+_PIECE = re.compile(
+    r"(?P<nl>\n)"
+    r"|(?P<ws>[^\S\n]+)"
+    r"|(?P<quoted>\"(?:\\.|[^\"\\])*\"|'[^']*')"
+    r"|(?P<redir>\d*[<>]+&?\d*-?|&>>?)"
+    r"|(?P<sep>[;|&()]+)"
+    r"|(?P<bare>(?:\\.|[^\s;|&()<>\"'])+)",
+    re.DOTALL,
+)
+SEARCH_TOOLS = {"grep", "egrep", "fgrep", "rg"}
+_MESSAGE_FLAG = re.compile(r"-[a-zA-Z]*m|--message")
+
+
+def _text(word):
+    return "".join(piece for _, piece in word[1])
+
+
+def _inert(word):
+    """True when dropping the word cannot hide something the shell would run or write."""
+    text = _text(word)
+    return "$(" not in text and "`" not in text and not any(k == "redir" for k, _ in word[1])
+
+
+def _search_args(words):
+    """Indexes of a search command's arguments, leaving redirections and their targets."""
+    drop, keep_next = set(), False
+    for i, word in words:
+        if keep_next or not _inert(word):
+            keep_next = word[1][-1][0] == "redir"   # `> file`: the target is the next word
+            continue
+        drop.add(i)
+    return drop
+
+
+def _message_args(words):
+    """Indexes of the values given to `git commit -m` / `--message`."""
+    drop, take = set(), False
+    for i, word in words:
+        text = _text(word)
+        if take:
+            take = False
+            if _inert(word):
+                drop.add(i)
+        elif _MESSAGE_FLAG.fullmatch(text):
+            take = True
+        elif text.startswith("--message=") and _inert(word):
+            drop.add(i)
+    return drop
+
+
+def _scrub_segment(seg):
+    words = [(i, tok) for i, tok in enumerate(seg) if tok[0] == "word"]
+    while words and re.fullmatch(r"\w+=.*", _text(words[0][1]), re.DOTALL):
+        words = words[1:]                           # leading VAR=value assignments
+    if not words:
+        return "".join(_text(t) if t[0] == "word" else t[1] for t in seg)
+    command, args = _text(words[0][1]).rsplit("/", 1)[-1], words[1:]
+    names = [_text(w) for _, w in args]
+    drop = set()
+    if command in SEARCH_TOOLS:
+        if not any(n.startswith("--pre") for n in names):   # rg --pre runs a command
+            drop = _search_args(args)
+    elif command == "git" and "grep" in names:
+        drop = _search_args(args[names.index("grep") + 1:])
+    elif command == "git" and "commit" in names:
+        drop = _message_args(args[names.index("commit") + 1:])
+    return "".join("" if i in drop else (_text(t) if t[0] == "word" else t[1])
+                   for i, t in enumerate(seg))
+
+
+def scrub(cmd: str) -> str:
+    """Remove commit-message and search-pattern text from a command line."""
+    cmd = cmd.replace("\\\n", " ")
+    tokens, pos = [], 0
+    for m in _PIECE.finditer(cmd):
+        if m.start() != pos:
+            return cmd      # unreadable (an unclosed quote, say): scrub nothing
+        pos = m.end()
+        kind = m.lastgroup
+        if kind in ("quoted", "bare", "redir"):
+            if tokens and tokens[-1][0] == "word":
+                tokens[-1][1].append((kind, m.group()))
+            else:
+                tokens.append(("word", [(kind, m.group())]))
+        else:
+            tokens.append(("ws" if kind == "ws" else "break", m.group()))
+    if pos != len(cmd):
+        return cmd
+    out, seg = [], []
+    for tok in tokens + [("break", "")]:
+        if tok[0] == "break":
+            out.append(_scrub_segment(seg) + tok[1])
+            seg = []
+        else:
+            seg.append(tok)
+    return "".join(out)
+
+
 DENY_PATTERNS = [
     # Terraform / OpenTofu
     (r"\b(terraform|tofu)\s+destroy\b", "terraform destroy is never run by an agent"),
@@ -79,7 +183,7 @@ DENY_PATTERNS = [
     # Cloud CLIs — deletion of durable resources / audit & backup controls
     (r"\baws\s+s3\s+(rb|rm)\b.*(--force|--recursive)", "recursive S3 deletion"),
     (r"\baws\s+kms\s+(schedule-key-deletion|disable-key)\b", "KMS key deletion makes encrypted data unrecoverable"),
-    (r"\baws\s+(rds|dynamodb|ec2)\s+delete-", "deleting a stateful AWS resource"),
+    (r"\baws\s+(rds|dynamodb|ec2)\s+delete-(?!tags\b)", "deleting a stateful AWS resource"),
     (r"\baws\s+rds\b.*--skip-final-snapshot", "skipping the final RDS snapshot"),
     (r"\baws\s+(cloudtrail\s+(stop-logging|delete-trail)|backup\s+delete-)", "disabling audit logging or deleting backups"),
     (r"\baws\s+s3api\s+put-bucket-versioning\b.*Suspended", "suspending S3 versioning"),
@@ -103,11 +207,17 @@ DENY_PATTERNS = [
     (r"\bgh\s+api\b(?=.*(branches/[^\s]*/protection|rulesets))(?=.*(?:--method|-X)\s*=?\s*(?:PUT|POST|PATCH|DELETE))",
      "branch protection is the backstop; it is not yours to change"),
     # The guard is a file. rm/mv/truncate reach it without going through Edit, so the
-    # Edit(~/.claude/**) deny does not cover them -- the docs are explicit that it does not
+    # Edit(~/.claude/...) denies do not cover them -- the docs are explicit that they do not
     # apply to subprocesses that write files indirectly.
     # Match only commands that WRITE there. An earlier version matched the path anywhere,
     # which denied `cat ~/.claude/settings.json` -- reading the config is routine and fine.
-    (r"\b(rm|mv|cp|dd|truncate|tee|install|shred|unlink|chmod|chown)\b[^;|&]*\.claude/(hooks|settings|agents)",
+    (r"\b(rm|mv|dd|truncate|tee|shred|unlink|chmod|chown)\b[^;|&]*\.claude/(hooks|settings|agents)",
+     "the agent guardrails are not the agent's to remove or overwrite"),
+    # cp and install only write to their destination. Copying a guardrail file OUT, to
+    # back it up or compare it, is a read.
+    (r"\b(cp|install)\b[^;|&]*\s\S*\.claude/(hooks|settings|agents)[^\s;|&]*\s*(?:$|[;|&])",
+     "the agent guardrails are not the agent's to remove or overwrite"),
+    (r"\b(cp|install)\b[^;|&]*\s(-t|--target-directory)[= ]?\S*\.claude/(hooks|settings|agents)",
      "the agent guardrails are not the agent's to remove or overwrite"),
     (r">>?\s*\S*\.claude/(hooks|settings|agents)",
      "redirecting over the agent guardrails"),
@@ -123,7 +233,9 @@ DENY_PATTERNS = [
     (r"\bGIT_CONFIG_KEY_\d+\s*=", "GIT_CONFIG_* env vars inject config without touching a config file"),
     (r"\bgit\s+push\b.*(--force|-f\b|\+)\s*.*\b(main|master|prod|production|release)\b", "force-push to a protected branch"),
     (r"\bgit\s+push\b.*\b(main|master|prod|production|release)\b.*(--force|-f\b)", "force-push to a protected branch"),
-    (r"\bgit\s+(branch\s+-D|reset\s+--hard\s+origin)", "destructive git history operation"),
+    # (?-i:...) because the patterns run case-insensitively, and `git branch -d` is the
+    # safe form: it refuses to delete a branch that has not been merged.
+    (r"\bgit\s+(branch\s+(?-i:-D)|reset\s+--hard\s+origin)", "destructive git history operation"),
     (r"\bgit\s+worktree\s+remove\b.*(--force|-f\b)", "force-removing a worktree discards an agent's work"),
     (r"\bgit\s+branch\s+-[dD]\s+agent/", "deleting an agent branch"),
     # A merge without --no-ff leaves no merge commit, so `git log --merges` cannot show
@@ -137,7 +249,9 @@ DENY_PATTERNS = [
     (r"\bdocker\s+(system|volume)\s+prune\b", "docker prune removes volumes/images"),
     (r"\bsystemctl\s+(disable|mask)\b.*(auditd|rsyslog|journald)", "disabling audit/log services"),
     # Secrets hygiene
-    (r"\bgit\s+add\b.*\.(env|pem|key|p12|pfx)\b", "adding secret material to git"),
+    # Within the `git add` itself, and not the committed placeholders (.env.example).
+    (r"\bgit\s+add\b[^;|&]*\.(env|pem|key|p12|pfx)\b(?!\.(example|sample|template|dist)\b)",
+     "adding secret material to git"),
     (r"\bvault\s+(kv\s+)?(delete|destroy|metadata\s+delete)\b", "deleting Vault secrets"),
 ]
 
@@ -145,7 +259,8 @@ ASK_PATTERNS = [
     (r"\b(terraform|tofu)\s+apply\b", "terraform apply"),
     (r"\b(terraform|tofu)\s+import\b", "terraform import modifies state"),
     (r"\b(kubectl|helm|kustomize)\b.*(--context|--kube-context)[= ]\S*prod", "kubectl/helm against a prod context"),
-    (r"\bkubectl\s+(apply|delete|patch|rollout|scale|drain|cordon)\b", "kubectl write operation"),
+    (r"\bkubectl\s+(apply|delete|patch|scale|drain|cordon)\b", "kubectl write operation"),
+    (r"\bkubectl\s+rollout\s+(?!status\b|history\b)", "kubectl write operation"),
     (r"\bhelm\s+(upgrade|install|rollback)\b", "helm release change"),
     (r"\b(aws|gcloud|az)\b.*(--profile|--project|--subscription)[= ]\S*prod", "cloud CLI against a prod account"),
     (r"\b(terraform|tofu)\s+workspace\s+select\s+\S*prod", "selecting the prod Terraform workspace"),
@@ -168,7 +283,8 @@ ASK_PATTERNS = [
     (r"\bgh\s+pr\s+review\b.*--approve", "approving a pull request"),
     # the human's working branch is read-only to agents: anything that moves HEAD or discards work asks
     (r"\bgit\s+merge\b(?!.*--no-ff)", "merge without --no-ff -- the merge commit is what makes this revertable"),
-    (r"\bgit\s+(checkout|switch|merge|rebase|reset|stash|cherry-pick|restore)\b", "git operation that moves HEAD or discards changes"),
+    (r"\bgit\s+(checkout|switch|merge|rebase|reset|cherry-pick|restore)\b", "git operation that moves HEAD or discards changes"),
+    (r"\bgit\s+stash\b(?!\s+(list|show)\b)", "git operation that moves HEAD or discards changes"),
     (r"\bgit\s+worktree\s+(add|remove|prune)\b", "manual worktree change (crew manages these)"),
 ]
 
@@ -181,7 +297,7 @@ def main() -> int:
     if payload.get("tool_name") != "Bash":
         return 0
     cmd = (payload.get("tool_input") or {}).get("command", "") or ""
-    raw, flat = normalize(cmd)
+    raw, flat = normalize(scrub(cmd))
 
     for pattern, reason in DENY_PATTERNS:
         if re.search(pattern, flat, re.IGNORECASE) or re.search(pattern, raw, re.IGNORECASE):
