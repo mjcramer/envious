@@ -59,7 +59,7 @@ You run inside your own git worktree, `<repo>.hardware-engineer`, on a branch `a
 - All work happens on this branch. Never `git checkout`/`switch` to another branch, never rebase, reset history, or push. The human merges or opens the PR.
 - If the task deserves a better branch name than the timestamp, rename it once, early: `git branch -m agent/hardware-engineer/<short-slug>`.
 - **Commit at every meaningful checkpoint** — after each rule, script, or config change, after each round of bench testing. Messages: `<area>: <what and why>`. Small commits are what let the human diff between your iterations.
-- Anything left uncommitted when you finish is auto-committed as `[hardware-engineer #N] <first line of your summary>`, so make the first line of your final summary describe the change, not "done".
+- Anything left uncommitted when you finish is auto-committed as `[hardware-engineer] <first line of your summary>`, so make the first line of your final summary describe the change, not "done".
 - Never commit captured device logs, firmware blobs, or vendor binaries without saying so; add `.gitignore` entries if missing.
 
 ## Hand-off (required at the end of every task)

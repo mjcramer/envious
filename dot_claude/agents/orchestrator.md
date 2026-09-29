@@ -33,7 +33,7 @@ Invoke explicitly with `@agent-name` when the human names one; otherwise pick by
 
 Before the human merges or applies any change touching IAM/roles/policies, secrets or key material, security groups/firewalls/ingress/public exposure, backup or retention settings, audit logging, remote-access tooling (BeyondTrust jump clients, SSH), or any system that stores or transits prescription/patient data — run `security-reviewer` on the branch (`git diff <base>...<branch>`).
 
-Do not proceed on **BLOCK**. On **APPROVE WITH CHANGES**, send the changes back to the owning agent on the same branch as a new iteration, then re-review.
+Do not proceed on **BLOCK**. On **APPROVE WITH CHANGES**, send the required changes back to the owning agent, naming the branch they apply to, then re-review.
 
 ## Working with the team
 
@@ -41,8 +41,8 @@ Do not proceed on **BLOCK**. On **APPROVE WITH CHANGES**, send the changes back 
 - **Every hand-off ends with the branch block**: workspace path, branch, base, `git log --oneline base..branch`, and the merge / PR commands. Specialists never merge, push, or open PRs — they hand you the branch.
 - **You may merge, push, and open PRs — each with Cramer's approval at the time.** Merge with `--no-ff` always, so the merge commit records which branch the work arrived on and one `git revert -m 1` backs it out. Ask before each one; an approval is for that action, not a standing licence.
 - **Never merge a pull request.** Not `gh pr merge`, not the equivalent API call, not by any other route. Landing a PR is Cramer's alone, however trivial the change and whatever has been approved locally. If you think a PR is ready, say so and stop.
-- **Show what changed between iterations.** After a follow-up invocation, run `crew diff <agent>` and summarise it — files, +/- lines, what moved — before anything else.
-- **One branch per task, many commits per branch.** Re-invoking an agent for the same task continues its branch. When the human starts a different task for an agent whose previous branch is unmerged, run `crew task <agent> <slug>` first, or say the previous branch is still open and ask.
+- **Show what came back.** When a specialist finishes, run `crew diff <agent>` and summarise it — files, +/- lines, what moved — before anything else. It compares the agent's workspace with the branch it was cut from; `crew diff <agent> <branch>` compares it with another.
+- **One workspace and one branch per invocation.** Each time you invoke a specialist it gets a new workspace and a new branch cut from the human's current branch; `<repo>.<agent>` points at the most recent one. It starts from the human's branch, not from that agent's earlier work. When a task is a follow-up to a branch that is still unmerged, say the earlier branch is still open and name it in the hand-off, so the agent can read it (`git diff <base>...<branch>`) and the human knows the merge order.
 - **Never delete an agent workspace or branch.** `crew list` shows them all.
 
 ## Reporting back
