@@ -11,9 +11,10 @@ after the agent and the task it was given:
 
 Claude Code does not say which agent a worktree is for when it asks for one, only a
 generated id. crew finds out by reading the launch that is in flight from the session
-transcript. When it cannot, the workspace starts out as  <repo>.agent-<id>  and is given
-its proper name when the agent stops, which is also when a wrong guess is put right.
-Workspaces are never removed.
+transcript. The transcript is written behind the conversation, so crew keeps re-reading
+it for a moment (LAUNCH_WAIT) before giving up. When it cannot find the launch, the
+workspace starts out as  <repo>.agent-<id>  and is given its proper name when the agent
+stops, which is also when a wrong guess is put right. Workspaces are never removed.
 
 Whatever the agent leaves uncommitted is committed when it stops, as  [<agent>] <summary>.
 
@@ -44,6 +45,12 @@ name is left alone.
 
 Override the workspace parent directory with AGENT_WS_ROOT (default: sibling of the repo,
 falling back to ~/.claude/workspaces if the sibling location is not writable).
+
+To see what a hook was actually given, create the directory ~/.claude/crew-debug (or
+point CREW_DEBUG_DIR at one). While it exists, every hook run writes a file there with
+the payload it received and the log lines it printed. Remove the directory to stop. The
+files hold whatever the payload held, which at SubagentStop includes the agent's last
+message, so treat them as you would the transcript.
 """
 import fcntl
 import json
@@ -51,6 +58,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +67,9 @@ BRANCH_PREFIX = "agent/"
 GENERATED_NAME = re.compile(r"agent-[0-9a-f]{8,}")     # what Claude Code calls a subagent's worktree
 STAMP = re.compile(r"\d{8}-\d{4}(-\d+)?")              # a branch nobody has named yet
 TRANSCRIPT_TAIL = 4 * 1024 * 1024                      # a launch in flight is near the end
+LAUNCH_WAIT = 2.0                                      # seconds to keep re-reading it for the launch
+LAUNCH_POLL = 0.1
+DEBUG_DIR = Path.home() / ".claude" / "crew-debug"     # hook payload capture, on while it exists
 
 # Agents that deliberately work in the human's checkout instead of their own worktree.
 # They have no branch; their finish is committed in place so there is a readable boundary.
@@ -68,6 +79,46 @@ IN_CHECKOUT_AGENTS = {"spike-engineer"}
 # ----------------------------------------------------------------------------- helpers
 def log(msg):
     print(f"[crew] {msg}", file=sys.stderr)
+    if capture:
+        capture.note(msg)
+
+
+class Capture:
+    """One file per hook run: the payload as received, then what crew said about it.
+
+    The payload is written before the hook does anything, so it is on disk even if the
+    hook then dies; the file is rewritten with the log lines at the end. Readable by
+    the owner only. A failure to write is reported and otherwise ignored: a debugging
+    aid must never be what breaks a worktree launch."""
+
+    def __init__(self, directory, hook, payload):
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        self.path = directory / f"{stamp}-{hook}.json"
+        self.record = {"hook": hook, "received": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+                       "pid": os.getpid(), "payload": payload, "crew": []}
+        self.write()
+
+    def note(self, msg):
+        self.record["crew"].append(msg)
+
+    def write(self):
+        try:
+            fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump(self.record, f, indent=1, default=str)
+                f.write("\n")
+        except OSError as e:
+            print(f"[crew] debug capture failed: {e}", file=sys.stderr)
+
+
+capture = None          # set in main() when debugging is switched on
+
+
+def debug_dir():
+    """Where to capture hook payloads, or None when debugging is off."""
+    override = os.environ.get("CREW_DEBUG_DIR")
+    d = Path(override).expanduser() if override else DEBUG_DIR
+    return d if d.is_dir() else None
 
 
 def git(*args, cwd=None, check=True, capture=True):
@@ -235,20 +286,47 @@ def claimed_launches(main):
     return {line.split()[-1] for line in out.splitlines() if line.strip()}
 
 
-def next_launch(main, payload):
-    """(agent, task, launch id) for the launch this worktree is most likely for, or None.
+def match_launch(calls, taken, payload):
+    """The launch among `calls` that this worktree is for, as (agent, task, launch id),
+    or None.
 
-    Agents launched in the same message are taken in the order they were written. That
-    is a guess when there are several, which is why SubagentStop checks it."""
-    taken = claimed_launches(main)
-    for call in pending_launches(payload.get("transcript_path")):
+    When the payload names the call (`tool_use_id`, in Claude Code releases newer than
+    2.1.287) that is the one, and nothing else is considered. Otherwise agents launched
+    in the same message are taken in the order they were written. That is a guess when
+    there are several, which is why SubagentStop checks it."""
+    wanted = payload.get("tool_use_id")
+    for call in calls:
+        if wanted and call["id"] != wanted:
+            continue
         args = call.get("input") or {}
         agent = safe_slug(args.get("subagent_type") or "")
         if call["id"] in taken or not args.get("subagent_type") or agent in IN_CHECKOUT_AGENTS:
             continue
-        if wants_worktree(call, payload.get("cwd") or os.getcwd()):
+        if wanted or wants_worktree(call, payload.get("cwd") or os.getcwd()):
             return agent, task_slug(args.get("description")) or datetime.now().strftime("%Y%m%d-%H%M"), call["id"]
     return None
+
+
+def next_launch(main, payload):
+    """(launch, seconds waited): the launch this worktree is for, see match_launch, or
+    None when the transcript does not show one.
+
+    Claude Code writes the transcript behind the conversation, and WorktreeCreate fires
+    within milliseconds of the Agent call, so the call is usually not on disk yet when
+    the hook starts (in 2.1.287: the whole launch returns within a second of the call's
+    timestamp). Keep re-reading for LAUNCH_WAIT; the lock is held meanwhile, so agents
+    launched together still claim their calls one at a time, in order."""
+    transcript = payload.get("transcript_path")
+    if not transcript:
+        return None, 0.0
+    taken = claimed_launches(main)
+    started = time.monotonic()
+    while True:
+        launch = match_launch(pending_launches(transcript), taken, payload)
+        waited = time.monotonic() - started
+        if launch or waited >= LAUNCH_WAIT:
+            return launch, waited
+        time.sleep(LAUNCH_POLL)
 
 
 def launch_record(payload):
@@ -300,9 +378,11 @@ def workspace_name(p):
         {"agent_type": "orchestrator", "name": "agent-a671a08082793dbaa", ...}
 
     `name` is the only per-invocation identifier available: "agent-<agent_id>" for a
-    subagent, or the given name for EnterWorktree / `claude --worktree`. The real agent
-    type is in the payload only at SubagentStop; before that it has to be read from the
-    launch in the transcript (see next_launch)."""
+    subagent, or the given name for EnterWorktree / `claude --worktree`. In Claude Code
+    2.1.287 the payload is exactly the common fields plus `name`; the hooks reference
+    now also lists `description` and `tool_use_id`, which newer releases send. The real
+    agent type is in the payload only at SubagentStop; before that it has to be read
+    from the launch in the transcript (see next_launch)."""
     return p.get("name") or "worktree"
 
 
@@ -351,7 +431,7 @@ def create_workspace(main, payload):
     agent = safe_slug(workspace_name(payload))
     path = ws_path(main, agent)
     base_branch, base_sha = resolve_base(main, payload.get("base_ref"))
-    launch = next_launch(main, payload) if GENERATED_NAME.fullmatch(agent) else None
+    launch, waited = next_launch(main, payload) if GENERATED_NAME.fullmatch(agent) else (None, 0.0)
 
     if launch:
         agent, task, launch_id = launch
@@ -360,13 +440,14 @@ def create_workspace(main, payload):
         git("worktree", "add", str(path), "-b", branch, base_sha, cwd=main)
         set_branch_base(path, branch, base_branch)
         git("config", f"branch.{branch}.agent-launch", launch_id, cwd=path)
-        log(f"created {path} on {branch} (base {base_branch})")
+        log(f"created {path} on {branch} (base {base_branch}); "
+            f"launch {launch_id} was in the transcript after {waited:.1f}s")
     elif not path.exists():
         branch = new_branch_name(main, agent)
         git("worktree", "add", str(path), "-b", branch, base_sha, cwd=main)
         set_branch_base(path, branch, base_branch)
-        log(f"created {path} on {branch} (base {base_branch}); "
-            f"could not tell which agent it is for, so it is named when the agent stops")
+        log(f"created {path} on {branch} (base {base_branch}); could not tell which agent "
+            f"it is for after waiting {waited:.1f}s for the transcript, so it is named when the agent stops")
     else:
         # Only a worktree with a fixed name gets here (EnterWorktree, `claude --worktree`);
         # a subagent's name is new on every run. Carry on where it left off -- unless that
@@ -666,15 +747,22 @@ def main():
         print(__doc__.strip())  # asking for help is not an error
         return 0
     if cmd.startswith("hook-"):
+        global capture
         try:
             payload = json.load(sys.stdin)
         except Exception:
             payload = {}
+        debug = debug_dir()
+        if debug:
+            capture = Capture(debug, cmd, payload)
         try:
             return {"hook-create": hook_create, "hook-stop": hook_stop, "hook-remove": hook_remove}[cmd](payload)
         except Exception as e:  # never let a hook crash silently
             log(f"error: {e}")
             return 1 if cmd == "hook-create" else 0
+        finally:
+            if capture:
+                capture.write()
     table = {"list": cmd_list, "path": cmd_path, "diff": cmd_diff, "clean": cmd_clean}
     if cmd not in table:
         print(f"crew: unknown subcommand '{cmd}'\n"
