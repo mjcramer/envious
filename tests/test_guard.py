@@ -36,6 +36,7 @@ Run:  python3 -B -m unittest tests.test_guard -v
 from __future__ import annotations
 
 import json
+import time
 import unittest
 from dataclasses import dataclass
 
@@ -61,25 +62,39 @@ class Row:
 NEVER_RUN = [
     Row("NR-TF-DESTROY", DENY, "terraform destroy", "CLAUDE.md: terraform destroy"),
     Row("NR-TOFU-DESTROY", DENY, "tofu destroy -auto-approve", "CLAUDE.md: terraform destroy, OpenTofu spelling"),
+    Row("NR-TF-CHDIR-DESTROY", DENY, "terraform -chdir=infra destroy -auto-approve", "CLAUDE.md: terraform destroy; -chdir between tool and subcommand"),
+    Row("NR-TOFU-CHDIR-DESTROY", DENY, "tofu -chdir=infra destroy", "CLAUDE.md: terraform destroy; -chdir, OpenTofu spelling"),
+    Row("NR-TF-APPLY-DESTROY", DENY, "terraform apply -destroy", "CLAUDE.md: terraform destroy; apply -destroy is the same thing"),
+    Row("NR-TOFU-CHDIR-APPLY-DESTROY", DENY, "tofu -chdir=infra apply -destroy -auto-approve", "CLAUDE.md: terraform destroy; apply -destroy with -chdir"),
+    Row("NR-TF-DESTROY-THEN-CHAIN", DENY, "terraform destroy; ls", "a separator right after the subcommand still matches"),
     Row("NR-FORCE-PUSH-MAIN", DENY, "git push --force origin main", "CLAUDE.md: force-push; flag before the branch"),
     Row("NR-FORCE-PUSH-F", DENY, "git push -f origin master", "CLAUDE.md: force-push, short flag"),
     Row("NR-FORCE-PUSH-PLUS", DENY, "git push origin +main", "CLAUDE.md: force-push via refspec +"),
     Row("NR-FORCE-PUSH-TRAILING", DENY, "git push origin release --force", "CLAUDE.md: force-push; flag after the branch"),
     Row("NR-FORCE-PUSH-LEASE", DENY, "git push --force-with-lease origin main", "CLAUDE.md: force-push; --force-with-lease is still a force"),
-    Row("NR-FORCE-PUSH-FEATURE", DENY, "git push --force origin feature/x", "CLAUDE.md: force-pushes are never run, any branch",
-        gap="guard only denies force-push to main|master|prod|production|release; other branches fall through to the ASK for git push (settings.json glob 'git push --force *' is the only deny)"),
+    Row("NR-FORCE-PUSH-FEATURE", DENY, "git push --force origin feature/x", "CLAUDE.md: force-pushes are never run, any branch"),
+    Row("NR-FORCE-PUSH-FEATURE-F", DENY, "git push -f origin feature/x", "CLAUDE.md: force-push to any branch, short flag"),
+    Row("NR-FORCE-PUSH-FEATURE-PLUS", DENY, "git push origin +feature/x", "CLAUDE.md: force-push to any branch via refspec +"),
+    Row("NR-FORCE-PUSH-AGENT-LEASE", DENY, "git push --force-with-lease origin agent/x", "CLAUDE.md: force-push to an agent branch, with lease"),
+    Row("NR-FORCE-PUSH-COMBINED-FLAG", DENY, "git push -uf origin feature/x", "CLAUDE.md: force-push; -f folded into a flag cluster"),
     Row("NR-K8S-DELETE-NS", DENY, "kubectl delete namespace payments", "CLAUDE.md: kubectl delete of a namespace"),
     Row("NR-K8S-DELETE-NS-SHORT", DENY, "kubectl delete ns payments", "CLAUDE.md: kubectl delete ns, short form"),
+    Row("NR-K8S-DELETE-NS-PLURAL", DENY, "kubectl delete namespaces x", "CLAUDE.md: kubectl delete namespaces, plural form"),
+    Row("NR-K8S-CONTEXT-DELETE-NS", DENY, "kubectl --context dev delete ns payments", "CLAUDE.md: kubectl delete ns; --context between tool and subcommand"),
     Row("NR-K8S-DELETE-ALL", DENY, "kubectl delete pods --all -n default", "CLAUDE.md: kubectl delete with --all"),
+    Row("NR-K8S-N-DELETE-ALL", DENY, "kubectl -n x delete pods --all", "CLAUDE.md: kubectl delete --all; -n before the subcommand"),
     Row("NR-DROP-DATABASE", DENY, 'psql -c "DROP DATABASE vending"', "CLAUDE.md: database drops"),
     Row("NR-DROP-TABLE", DENY, "mysql -e 'drop table orders'", "CLAUDE.md: database drops, lower case table"),
     Row("NR-DROP-SCHEMA", DENY, 'psql -c "drop schema public cascade"', "CLAUDE.md: database drops, schema"),
     Row("NR-TRUNCATE", DENY, 'psql -c "TRUNCATE TABLE orders"', "CLAUDE.md: database drops; TRUNCATE is a drop of the rows"),
     Row("NR-PG-DROPCLUSTER", DENY, "pg_dropcluster 16 main", "CLAUDE.md: database drops, whole Postgres cluster"),
-    Row("NR-GCLOUD-SQL-DELETE", DENY, "gcloud sql instances delete vending-db", "CLAUDE.md: database drops; guard rule 'deleting a stateful GCP resource'",
-        gap="rule requires the resource word AFTER delete; real gcloud syntax puts it before (gcloud sql instances delete X), so this allows"),
-    Row("NR-AZ-SQL-DELETE", DENY, "az sql db delete --name vending --server s --resource-group g", "CLAUDE.md: database drops; guard rule 'deleting a stateful Azure resource'",
-        gap="rule requires the resource word AFTER delete|purge; real az syntax puts it before (az sql db delete), so this allows"),
+    Row("NR-GCLOUD-SQL-DELETE", DENY, "gcloud sql instances delete vending-db", "CLAUDE.md: database drops; gcloud puts the resource before the verb"),
+    Row("NR-GCLOUD-KMS-DESTROY", DENY, "gcloud kms keys versions destroy 1 --key k --keyring r --location l", "CLAUDE.md: KMS key deletion, GCP spelling"),
+    Row("NR-GCLOUD-COMPUTE-DELETE", DENY, "gcloud compute instances delete vm-1 --zone z", "deleting a stateful GCP resource: compute instance"),
+    Row("NR-GCLOUD-GKE-DELETE", DENY, "gcloud container clusters delete c --region r", "deleting a stateful GCP resource: GKE cluster"),
+    Row("NR-AZ-SQL-DELETE", DENY, "az sql db delete --name vending --server s --resource-group g", "CLAUDE.md: database drops; az puts the resource before the verb"),
+    Row("NR-AZ-KEYVAULT-PURGE", DENY, "az keyvault purge --name kv", "CLAUDE.md: KMS key deletion; purging a Key Vault is unrecoverable"),
+    Row("NR-AZ-GROUP-DELETE", DENY, "az group delete --name rg --yes", "deleting a resource group deletes everything in it"),
     Row("NR-RM-RF-ROOT", DENY, "rm -rf /", "CLAUDE.md: bulk rm -rf, filesystem root"),
     Row("NR-RM-RF-HOME", DENY, "rm -rf ~", "CLAUDE.md: bulk rm -rf, home"),
     Row("NR-RM-RF-HOMEVAR", DENY, "rm -rf $HOME", "CLAUDE.md: bulk rm -rf, $HOME"),
@@ -90,10 +105,15 @@ NEVER_RUN = [
     Row("NR-RM-RF-ETC", DENY, "rm -rf /etc/ssh", "CLAUDE.md: bulk rm -rf, system directory"),
     Row("NR-RM-R-VAR", DENY, "rm -r /var/lib/postgresql", "CLAUDE.md: bulk rm -r on a system directory, no -f"),
     Row("NR-KMS-SCHEDULE", DENY, "aws kms schedule-key-deletion --key-id 1234abcd", "CLAUDE.md: KMS key deletion"),
+    Row("NR-KMS-SCHEDULE-REGION-OPT", DENY, "aws --region us-west-2 kms schedule-key-deletion --key-id k", "CLAUDE.md: KMS key deletion; --region before the service"),
+    Row("NR-KMS-SCHEDULE-PROFILE-DEV", DENY, "aws --profile dev kms schedule-key-deletion --key-id k", "CLAUDE.md: KMS key deletion; a non-prod profile is still a deny (pairs with OK-AWS-PROFILE-DEV)"),
     Row("NR-KMS-DISABLE", DENY, "aws kms disable-key --key-id 1234abcd", "CLAUDE.md: KMS key deletion; disable is its first step"),
     Row("NR-BACKUP-DELETE", DENY, "aws backup delete-backup-vault --backup-vault-name nightly", "CLAUDE.md: deleting backups"),
+    Row("NR-BACKUP-DELETE-REGION-OPT", DENY, "aws --region us-west-2 backup delete-backup-vault --backup-vault-name n", "CLAUDE.md: deleting backups; --region before the service"),
     Row("NR-VERSIONING-SUSPEND", DENY, "aws s3api put-bucket-versioning --bucket b --versioning-configuration Status=Suspended", "CLAUDE.md: disabling versioning"),
+    Row("NR-VERSIONING-SUSPEND-PROFILE-OPT", DENY, "aws --profile dev s3api put-bucket-versioning --bucket b --versioning-configuration Status=Suspended", "CLAUDE.md: disabling versioning; --profile before the service"),
     Row("NR-CLOUDTRAIL-STOP", DENY, "aws cloudtrail stop-logging --name main", "CLAUDE.md: disabling audit logs"),
+    Row("NR-CLOUDTRAIL-STOP-PROFILE-OPT", DENY, "aws --profile dev cloudtrail stop-logging --name main", "CLAUDE.md: disabling audit logs; --profile before the service"),
     Row("NR-CLOUDTRAIL-DELETE", DENY, "aws cloudtrail delete-trail --name main", "CLAUDE.md: disabling audit logs by deleting the trail"),
     Row("NR-AUDITD-DISABLE", DENY, "systemctl disable auditd", "CLAUDE.md: disabling audit logs on a host"),
     Row("NR-JOURNALD-MASK", DENY, "systemctl mask systemd-journald", "CLAUDE.md: disabling audit logs; journald is the log"),
@@ -107,23 +127,31 @@ NEVER_RUN = [
 GUARD_DENY = [
     Row("DN-TF-STATE-RM", DENY, "terraform state rm aws_instance.web", "state surgery is a human's job"),
     Row("DN-TF-STATE-PUSH", DENY, "tofu state push terraform.tfstate", "state surgery, push variant"),
+    Row("DN-TF-CHDIR-STATE-RM", DENY, "terraform -chdir=infra state rm aws_instance.web", "state surgery; -chdir before the subcommand"),
+    Row("DN-TF-CHDIR-STATE-MV", DENY, "tofu -chdir=infra state mv a b", "state surgery, mv variant with -chdir"),
+    Row("DN-TF-CHDIR-STATE-PUSH", DENY, "terraform -chdir=infra state push s.tfstate", "state surgery, push variant with -chdir"),
     Row("DN-TF-AUTO-APPROVE", DENY, "terraform apply -auto-approve", "apply -auto-approve skips plan review"),
     Row("DN-TF-AUTO-APPROVE-LATE", DENY, "terraform apply -var env=dev -auto-approve", "apply -auto-approve anywhere on the line"),
+    Row("DN-TF-CHDIR-AUTO-APPROVE", DENY, "terraform -chdir=infra apply -auto-approve", "apply -auto-approve; -chdir before the subcommand"),
     Row("DN-TF-WS-DELETE", DENY, "terraform workspace delete staging", "workspace delete is irreversible"),
+    Row("DN-TF-CHDIR-WS-DELETE", DENY, "terraform -chdir=infra workspace delete staging", "workspace delete; -chdir before the subcommand"),
     Row("DN-K8S-DELETE-PVC", DENY, "kubectl delete pvc data-0", "deleting persistent volumes destroys data"),
+    Row("DN-K8S-CONTEXT-DELETE-PVC", DENY, "kubectl --context dev delete pvc data-0", "deleting persistent volumes; --context before the subcommand"),
     Row("DN-K8S-DELETE-PV", DENY, "kubectl delete persistentvolume pv-7", "deleting persistent volumes, long form"),
     Row("DN-HELM-UNINSTALL", DENY, "helm uninstall vending", "helm uninstall is a human's job"),
     Row("DN-HELM-DELETE", DENY, "helm delete vending", "helm delete is the old spelling of uninstall"),
     Row("DN-S3-RM-RECURSIVE", DENY, "aws s3 rm s3://bucket/prefix --recursive", "recursive S3 deletion"),
+    Row("DN-S3-RM-RECURSIVE-REGION-OPT", DENY, "aws --region us-west-2 s3 rm s3://b/p --recursive", "recursive S3 deletion; --region before the service"),
     Row("DN-S3-RB-FORCE", DENY, "aws s3 rb s3://bucket --force", "forced bucket removal"),
     Row("DN-RDS-DELETE", DENY, "aws rds delete-db-instance --db-instance-identifier x", "deleting a stateful AWS resource"),
+    Row("DN-RDS-DELETE-PROFILE-DEV", DENY, "aws --profile dev rds delete-db-instance --db-instance-identifier x", "deleting a stateful AWS resource; --profile before the service"),
     Row("DN-DYNAMO-DELETE", DENY, "aws dynamodb delete-table --table-name orders", "deleting a stateful AWS resource, DynamoDB"),
     Row("DN-EC2-DELETE", DENY, "aws ec2 delete-volume --volume-id vol-1", "deleting a stateful AWS resource, EC2 volume"),
     Row("DN-RDS-SKIP-SNAPSHOT", DENY, "aws rds delete-db-instance --db-instance-identifier x --skip-final-snapshot", "skipping the final RDS snapshot"),
-    Row("DN-GCLOUD-DELETE-SQL-AFTER", DENY, "gcloud projects delete --quiet sql-prod", "the GCP rule as written: resource word after delete"),
+    Row("DN-GCLOUD-DELETE-SQL-AFTER", DENY, "gcloud projects delete --quiet sql-prod", "the GCP rule is order-independent: resource word after delete still denies"),
     Row("DN-GSUTIL-RM-R", DENY, "gsutil rm -r gs://bucket", "recursive GCS deletion"),
     Row("DN-GSUTIL-RB", DENY, "gsutil rb -r gs://bucket", "recursive GCS bucket removal"),
-    Row("DN-AZ-PURGE-AFTER", DENY, "az resource purge --kind keyvault", "the Azure rule as written: resource word after purge"),
+    Row("DN-AZ-PURGE-AFTER", DENY, "az resource purge --kind keyvault", "the Azure rule is order-independent: resource word after purge still denies"),
     Row("DN-GH-PR-MERGE", DENY, "gh pr merge 42 --squash", "landing a PR is the human's alone"),
     Row("DN-GH-API-PULLS-MERGE", DENY, "gh api -X PUT repos/o/r/pulls/42/merge", "PR merge through the REST API"),
     Row("DN-CURL-PULLS-MERGE", DENY, "curl -X PUT https://api.github.com/repos/o/r/pulls/42/merge", "PR merge through the REST API with curl"),
@@ -159,8 +187,8 @@ GUARD_DENY = [
     Row("DN-VAULT-KV-DELETE", DENY, "vault kv delete secret/app", "deleting Vault secrets"),
     Row("DN-VAULT-DESTROY", DENY, "vault kv destroy -versions=1 secret/app", "destroying Vault secret versions"),
     Row("DN-DENY-BEATS-ASK", DENY, "sudo terraform destroy", "DENY rules run before ASK rules; sudo alone would only ask"),
-    Row("DN-AWS-GLOBAL-OPT-BEFORE-SERVICE", DENY, "aws --profile prod kms schedule-key-deletion --key-id k", "CLAUDE.md: KMS key deletion; --profile is the normal place for it",
-        gap="every aws rule is written \\baws\\s+<service>, so a global option (--profile, --region) between them defeats it; this falls through to the prod-profile ASK"),
+    Row("DN-AWS-GLOBAL-OPT-BEFORE-SERVICE", DENY, "aws --profile prod kms schedule-key-deletion --key-id k", "CLAUDE.md: KMS key deletion; --profile is the normal place for it, and deny beats the prod-profile ask"),
+    Row("DN-GIT-C-FORCE-PUSH-FEATURE", DENY, "git -C /x push --force origin feature/x", "force-push to any branch, after -C is stripped"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -274,6 +302,7 @@ GUARD_ASK = [
     Row("AK-TF-IMPORT", ASK, "terraform import aws_s3_bucket.b my-bucket", "terraform import modifies state"),
     Row("AK-K8S-APPLY", ASK, "kubectl apply -f deploy.yaml", "kubectl write"),
     Row("AK-K8S-DELETE-POD", ASK, "kubectl delete pod web-0", "kubectl delete of one pod asks; ns/--all deny"),
+    Row("AK-K8S-CONTEXT-DEV-DELETE-POD", ASK, "kubectl --context dev delete pod web-0", "--context before delete of one pod still only asks"),
     Row("AK-K8S-SCALE", ASK, "kubectl scale deploy web --replicas=2", "kubectl scale"),
     Row("AK-K8S-DRAIN", ASK, "kubectl drain node-1", "kubectl drain"),
     Row("AK-K8S-ROLLOUT-RESTART", ASK, "kubectl rollout restart deploy/web", "rollout restart is a write"),
@@ -293,6 +322,8 @@ GUARD_ASK = [
     Row("AK-SYSTEMCTL-DISABLE-OTHER", ASK, "systemctl disable bluetooth", "disable of a non-audit service asks; auditd/journald deny"),
     Row("AK-GIT-PUSH", ASK, "git push", "git push always asks"),
     Row("AK-GIT-PUSH-U", ASK, "git push -u origin agent/craft-engineer/x", "git push with -u"),
+    Row("AK-GIT-PUSH-SET-UPSTREAM", ASK, "git push --set-upstream origin feature", "--set-upstream has no f in a flag cluster"),
+    Row("AK-GIT-PUSH-FOLLOW-TAGS", ASK, "git push --follow-tags origin x", "--follow-tags is not --force"),
     Row("AK-GIT-C-PUSH", ASK, "git -C /x push", "git -C is stripped, so this is a git push"),
     Row("AK-GH-PR-CREATE", ASK, "gh pr create --fill", "opening a PR"),
     Row("AK-CURL-GITHUB-API", ASK, "curl https://api.github.com/repos/o/r", "direct GitHub API call"),
@@ -320,6 +351,8 @@ GUARD_ASK = [
 # ---------------------------------------------------------------------------
 LOOKALIKES = [
     Row("OK-TF-PLAN", ALLOW, "terraform plan", "plan is read-only"),
+    Row("OK-TF-PLAN-DESTROY", ALLOW, "terraform plan -destroy", "a destroy plan is still read-only"),
+    Row("OK-TF-CHDIR-PLAN", ALLOW, "terraform -chdir=infra plan", "-chdir with a read-only subcommand"),
     Row("OK-TF-WS-SELECT-DEV", ALLOW, "terraform workspace select dev", "non-prod workspace"),
     Row("OK-TF-WS-LIST", ALLOW, "terraform workspace list", "workspace list"),
     Row("OK-GIT-LOG", ALLOW, "git log --oneline", "read-only git"),
@@ -338,8 +371,7 @@ LOOKALIKES = [
     Row("OK-GIT-COMMIT-NO-MSG", ALLOW, "git commit", "a bare commit"),
     Row("OK-GREP-DROP-TABLE", ALLOW, 'grep -rn "drop table" .', "scrub drops a search pattern"),
     Row("OK-RG-DESTROY", ALLOW, "rg 'terraform destroy' docs/", "scrub drops an rg pattern"),
-    Row("OK-RG-PREVIEW-FLAG", ALLOW, "rg --pretty 'rm -rf /' docs/", "--pretty is not --pre; only the exact flag disables scrubbing",
-        gap="scrub checks startswith('--pre'), so --pretty/--precise disable scrubbing and the pattern text is matched"),
+    Row("OK-RG-PREVIEW-FLAG", ALLOW, "rg --pretty 'rm -rf /' docs/", "--pretty is not --pre; only the exact flag disables scrubbing"),
     Row("OK-GIT-GREP", ALLOW, 'git grep "rm -rf /"', "scrub drops a git grep pattern"),
     Row("OK-GREP-PIPED", ALLOW, 'git log | grep "kubectl delete ns"', "scrub works per pipeline segment"),
     Row("OK-GH-PR-VIEW", ALLOW, "gh pr view 12", "read-only gh"),
@@ -348,13 +380,19 @@ LOOKALIKES = [
     Row("OK-GH-GRAPHQL-QUERY", ALLOW, "gh api graphql -f query='query { viewer { login } }'", "a read query is fine"),
     Row("OK-GH-ALIAS-LIST", ALLOW, "gh alias list", "listing aliases"),
     Row("OK-K8S-GET", ALLOW, "kubectl get pods", "read-only kubectl"),
+    Row("OK-K8S-GET-NS", ALLOW, "kubectl get ns", "ns after a read verb"),
+    Row("OK-K8S-GET-NS-THEN-HELM", ALLOW, "kubectl get ns && helm list", "a later segment's words do not join this one's"),
     Row("OK-K8S-CONTEXT-DEV", ALLOW, "kubectl --context dev get pods", "non-prod context"),
     Row("OK-K8S-ROLLOUT-STATUS", ALLOW, "kubectl rollout status deploy/web", "rollout status is a read"),
     Row("OK-K8S-ROLLOUT-HISTORY", ALLOW, "kubectl rollout history deploy/web", "rollout history is a read"),
     Row("OK-K8S-DESCRIBE-NS", ALLOW, "kubectl describe namespace payments", "describe is a read"),
     Row("OK-HELM-TEMPLATE", ALLOW, "helm template web ./chart", "helm template renders locally"),
     Row("OK-HELM-LIST", ALLOW, "helm list -A", "helm list is a read"),
-    Row("OK-AWS-PROFILE-DEV", ALLOW, "aws --profile dev s3 ls", "non-prod profile"),
+    Row("OK-AWS-PROFILE-DEV", ALLOW, "aws --profile dev s3 ls", "non-prod profile (pairs with NR-KMS-SCHEDULE-PROFILE-DEV)"),
+    Row("OK-AWS-PROFILE-DEV-DELETE-TAGS", ALLOW, "aws --profile dev rds delete-tags --resource-name arn:x --tag-keys k", "delete-tags stays excluded with a profile in front"),
+    Row("OK-GCLOUD-INSTANCES-LIST", ALLOW, "gcloud compute instances list", "compute without a delete verb"),
+    Row("OK-AZ-VM-LIST", ALLOW, "az vm list", "vm without a delete verb"),
+    Row("OK-RSYNC-AZ-DELETE", ALLOW, "rsync -az --delete build/ host:/srv/storage/", "-az is not az, and --delete is not the verb delete"),
     Row("OK-AWS-S3-LS", ALLOW, "aws s3 ls s3://bucket", "s3 ls is a read"),
     Row("OK-AWS-S3-RM-ONE", ALLOW, "aws s3 rm s3://bucket/one-object", "single object delete is not recursive"),
     Row("OK-AWS-RDS-DELETE-TAGS", ALLOW, "aws rds delete-tags --resource-name arn:x --tag-keys k", "delete-tags is excluded from the delete- rule"),
@@ -374,7 +412,7 @@ LOOKALIKES = [
     Row("OK-GREP-HOOKS", ALLOW, "grep -n DENY ~/.claude/hooks/guard-infra.py", "searching the guard is a read"),
     Row("OK-LS-AGENTS", ALLOW, "ls -la ~/.claude/agents/", "listing is a read"),
     Row("OK-CHMOD-ELSEWHERE", ALLOW, "chmod +x scripts/run.sh", "chmod outside .claude"),
-    Row("OK-RM-CLAUDE-PROJECT-DIR", ALLOW, "rm -rf .claude/worktrees/x", "a repo's .claude/ is not ~/.claude/hooks|settings|agents"),
+    Row("OK-RM-CLAUDE-PROJECT-DIR", ALLOW, "rm -rf .claude/cache/x", "a repo's .claude/ is not ~/.claude/hooks|settings|agents"),
     Row("OK-ECHO-PROD-WORD", ALLOW, 'echo "deploying to prod later"', "prod as prose, not a flag"),
     Row("OK-PRODUCT-FLAG", ALLOW, "make build --env dev --product vending", "-e dev; 'product' is not prod"),
     Row("OK-SSH-DEV", ALLOW, "ssh build-box", "ssh to a non-fleet host"),
@@ -482,6 +520,27 @@ class GuardContract(unittest.TestCase):
     def test_fail_open_is_silent_and_exits_zero(self):
         r = run_guard(b"{not json")
         self.assertEqual((r.decision, r.stdout, r.exit_code), ("allow", "", 0))
+
+    def test_oversized_command_asks_fast(self):
+        """A command past the length cap asks before any pattern runs. The old
+        gcloud/az rules took 79 s on 12.6 KB and ran past the 600 s hook timeout
+        near 28 KB, and a timed-out PreToolUse hook does not block."""
+        cmd = "gcloud compute instances list --filter " + " ".join(["name=a"] * 4400)
+        self.assertGreater(len(cmd), 30 * 1024)
+        started = time.monotonic()
+        r = guard(cmd)
+        elapsed = time.monotonic() - started
+        self.assertEqual(r.decision, "ask")
+        self.assertIn("KB", r.reason)
+        self.assertLess(elapsed, 1.0, f"guard took {elapsed:.2f}s on a {len(cmd)} char command")
+
+    def test_command_under_the_cap_is_judged(self):
+        """Just under the cap, the rules still run and a deny at the end is found."""
+        filler = " ".join(["--labels k=v"] * 550)
+        cmd = "gcloud sql instances delete vending-db " + filler
+        self.assertLess(len(cmd), 8 * 1024)
+        self.assertGreater(len(cmd), 7 * 1024)
+        self.assertEqual(guard(cmd).decision, "deny")
 
 
 if __name__ == "__main__":
