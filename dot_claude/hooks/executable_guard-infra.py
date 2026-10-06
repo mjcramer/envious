@@ -131,7 +131,7 @@ def _scrub_segment(seg):
     names = [_text(w) for _, w in args]
     drop = set()
     if command in SEARCH_TOOLS:
-        if not any(n.startswith("--pre") for n in names):   # rg --pre runs a command
+        if not any(n == "--pre" or n.startswith("--pre=") for n in names):   # rg --pre runs a command
             drop = _search_args(args)
     elif command == "git" and "grep" in names:
         drop = _search_args(args[names.index("grep") + 1:])
@@ -169,27 +169,48 @@ def scrub(cmd: str) -> str:
     return "".join(out)
 
 
+# Global options sit between a tool and its subcommand: `terraform -chdir=infra destroy`,
+# `kubectl --context dev delete ns x`, `aws --profile dev kms schedule-key-deletion`. A
+# rule written as `\btool\s+subcommand` misses every one of them, and the settings.json
+# allow for `Bash(terraform:*)` then runs the command without asking. _OPTS spans whatever
+# lies between the two words but stops at a shell separator, so the subcommand must belong
+# to the same command as the tool (normalize() has already joined lines with spaces, so a
+# newline is not a separator here). Keeping every scan inside one segment is also what
+# keeps it linear: the old gcloud/az rules nested two unbounded `.*` and took minutes on a
+# long command, which is longer than the hook timeout -- and a timed-out hook does not block.
+#
+# Where a rule needs two words that are not adjacent (`apply ... -auto-approve`,
+# `delete ... --all`, or gcloud/az which put the resource before the verb: `gcloud sql
+# instances delete X`, `az group delete`), it looks for each one independently with a
+# lookahead over the same segment, `(?=[^;|&]*\sWORD\b)`. Two lookaheads cost two scans;
+# `A[^;|&]*B[^;|&]*C` costs one scan per candidate B, which a repeated word turns cubic.
+_OPTS = r"\b[^;|&]*?\s"
+
 DENY_PATTERNS = [
     # Terraform / OpenTofu
-    (r"\b(terraform|tofu)\s+destroy\b", "terraform destroy is never run by an agent"),
-    (r"\b(terraform|tofu)\s+state\s+(rm|mv|push)\b", "manual Terraform state surgery must be done by a human"),
-    (r"\b(terraform|tofu)\s+apply\b.*-auto-approve", "terraform apply -auto-approve bypasses plan review"),
-    (r"\b(terraform|tofu)\s+workspace\s+delete\b", "deleting a Terraform workspace is irreversible"),
+    (r"\b(terraform|tofu)" + _OPTS + r"destroy\b", "terraform destroy is never run by an agent"),
+    (r"\b(terraform|tofu)\b(?=[^;|&]*\sapply\b)(?=[^;|&]*\s-destroy\b)", "terraform destroy is never run by an agent"),
+    (r"\b(terraform|tofu)" + _OPTS + r"state\s+(rm|mv|push)\b", "manual Terraform state surgery must be done by a human"),
+    (r"\b(terraform|tofu)\b(?=[^;|&]*\sapply\b)(?=[^;|&]*-auto-approve)", "terraform apply -auto-approve bypasses plan review"),
+    (r"\b(terraform|tofu)" + _OPTS + r"workspace\s+delete\b", "deleting a Terraform workspace is irreversible"),
     # Kubernetes / Helm
-    (r"\bkubectl\s+delete\s+(ns|namespace)\b", "deleting a namespace destroys everything in it"),
-    (r"\bkubectl\s+delete\b.*\s--all\b", "kubectl delete --all is too broad"),
-    (r"\bkubectl\s+delete\s+(pv|pvc|persistentvolume)", "deleting persistent volumes destroys data"),
+    (r"\bkubectl" + _OPTS + r"delete\s+(ns|namespaces?)\b", "deleting a namespace destroys everything in it"),
+    (r"\bkubectl\b(?=[^;|&]*\sdelete\b)(?=[^;|&]*\s--all\b)", "kubectl delete --all is too broad"),
+    (r"\bkubectl" + _OPTS + r"delete\s+(pv|pvc|persistentvolume)", "deleting persistent volumes destroys data"),
     (r"\bhelm\s+(uninstall|delete)\b", "helm uninstall must be run by a human"),
     # Cloud CLIs — deletion of durable resources / audit & backup controls
-    (r"\baws\s+s3\s+(rb|rm)\b.*(--force|--recursive)", "recursive S3 deletion"),
-    (r"\baws\s+kms\s+(schedule-key-deletion|disable-key)\b", "KMS key deletion makes encrypted data unrecoverable"),
-    (r"\baws\s+(rds|dynamodb|ec2)\s+delete-(?!tags\b)", "deleting a stateful AWS resource"),
-    (r"\baws\s+rds\b.*--skip-final-snapshot", "skipping the final RDS snapshot"),
-    (r"\baws\s+(cloudtrail\s+(stop-logging|delete-trail)|backup\s+delete-)", "disabling audit logging or deleting backups"),
-    (r"\baws\s+s3api\s+put-bucket-versioning\b.*Suspended", "suspending S3 versioning"),
-    (r"\bgcloud\b.*\b(delete|destroy)\b.*(sql|kms|storage|compute\s+instances|container\s+clusters)", "deleting a stateful GCP resource"),
+    (r"\baws\b(?=[^;|&]*\ss3\s+(rb|rm)\b)(?=[^;|&]*(--force|--recursive))", "recursive S3 deletion"),
+    (r"\baws" + _OPTS + r"kms\s+(schedule-key-deletion|disable-key)\b", "KMS key deletion makes encrypted data unrecoverable"),
+    (r"\baws" + _OPTS + r"(rds|dynamodb|ec2)\s+delete-(?!tags\b)", "deleting a stateful AWS resource"),
+    (r"\baws\b(?=[^;|&]*\srds\b)(?=[^;|&]*--skip-final-snapshot)", "skipping the final RDS snapshot"),
+    (r"\baws" + _OPTS + r"(cloudtrail\s+(stop-logging|delete-trail)|backup\s+delete-)", "disabling audit logging or deleting backups"),
+    (r"\baws\b(?=[^;|&]*\ss3api\s+put-bucket-versioning\b)(?=[^;|&]*Suspended)", "suspending S3 versioning"),
+    # `\s` before the verb, not `\b`: `rsync -az --delete` is neither az nor a delete verb.
+    (r"\bgcloud\b(?=[^;|&]*\s(delete|destroy)\b)(?=[^;|&]*\s(sql|kms|storage|compute|container)\b)",
+     "deleting a stateful GCP resource"),
     (r"\bgsutil\s+(rm|rb)\b.*-r", "recursive GCS deletion"),
-    (r"\baz\b.*\b(delete|purge)\b.*(sql|keyvault|storage|vm|aks)", "deleting a stateful Azure resource"),
+    (r"\baz\b(?=[^;|&]*\s(delete|purge)\b)(?=[^;|&]*\s(sql|keyvault|storage|vm|aks|group|postgres|mysql|cosmosdb|backup)\b)",
+     "deleting a stateful Azure resource"),
     # Databases
     (r"\bdrop\s+(database|table|schema)\b", "DROP DATABASE/TABLE/SCHEMA"),
     (r"\btruncate\s+table\b", "TRUNCATE TABLE"),
@@ -231,8 +252,14 @@ DENY_PATTERNS = [
     (r"\bgit\b.*\bremote\.[^\s=]*\.(url|pushurl)\s*=", "repointing the remote inline, for this command only"),
     (r"\bgit\s+config\b.*\binsteadOf\b", "an insteadOf rewrite silently redirects every push and fetch"),
     (r"\bGIT_CONFIG_KEY_\d+\s*=", "GIT_CONFIG_* env vars inject config without touching a config file"),
-    (r"\bgit\s+push\b.*(--force|-f\b|\+)\s*.*\b(main|master|prod|production|release)\b", "force-push to a protected branch"),
-    (r"\bgit\s+push\b.*\b(main|master|prod|production|release)\b.*(--force|-f\b)", "force-push to a protected branch"),
+    # CLAUDE.md says never force-push, to any branch. The first rule names the branches that
+    # matter most so the reason says so; the second takes the rest. A force is `--force`,
+    # `--force-with-lease`, an `f` anywhere in a flag cluster (`-uf`), or a `+refspec`.
+    (r"\bgit\s+push\b(?=[^;|&]*\s(--force(-with-lease)?\b|-[a-zA-Z]*f[a-zA-Z]*\b|\+\S))"
+     r"(?=[^;|&]*\b(main|master|prod|production|release)\b)",
+     "force-push to a protected branch"),
+    (r"\bgit\s+push\b[^;|&]*\s(--force(-with-lease)?\b|-[a-zA-Z]*f[a-zA-Z]*\b|\+\S)",
+     "a force-push is never run by an agent, whatever the branch"),
     # (?-i:...) because the patterns run case-insensitively, and `git branch -d` is the
     # safe form: it refuses to delete a branch that has not been merged.
     (r"\bgit\s+(branch\s+(?-i:-D)|reset\s+--hard\s+origin)", "destructive git history operation"),
@@ -290,6 +317,9 @@ ASK_PATTERNS = [
 ]
 
 
+MAX_COMMAND_CHARS = 8 * 1024
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
@@ -298,6 +328,24 @@ def main() -> int:
     if payload.get("tool_name") != "Bash":
         return 0
     cmd = (payload.get("tool_input") or {}).get("command", "") or ""
+
+    # A few rules still backtrack, and a PreToolUse hook that outlives its timeout is
+    # skipped, not failed: a 28 KB command once ran past the 600 s limit and would have
+    # been allowed. No command needs to be this long on one line, so ask before scanning.
+    if len(cmd) > MAX_COMMAND_CHARS:
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "ask",
+                "permissionDecisionReason": (
+                    f"Command guard: a {len(cmd) // 1024} KB command is more than the guard will "
+                    f"scan ({MAX_COMMAND_CHARS // 1024} KB); move the content into a file "
+                    f"— confirm before running."
+                ),
+            }
+        }))
+        return 0
+
     raw, flat = normalize(scrub(cmd))
 
     for pattern, reason in DENY_PATTERNS:
