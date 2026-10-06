@@ -22,8 +22,13 @@ chez-apply:
 
 # Repo-local tests. These run against the chezmoi *source* files, so they can be
 # run before applying anything.
+#
+# -B keeps the interpreter from writing __pycache__ into the source tree (it is
+# chezmoi-ignored and gitignored, but better not to create it at all). The two
+# standalone scripts are their own harnesses and are not unittest-discoverable.
 .PHONY: test
 test:
+	@python3 -B -m unittest discover -s tests -t .
 	@tests/statusline-test.py
 	@tests/ssh-signing-test.py
 
