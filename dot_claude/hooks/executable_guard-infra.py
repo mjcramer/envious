@@ -189,7 +189,8 @@ _OPTS = r"\b[^;|&]*?\s"
 DENY_PATTERNS = [
     # Terraform / OpenTofu
     (r"\b(terraform|tofu)" + _OPTS + r"destroy\b", "terraform destroy is never run by an agent"),
-    (r"\b(terraform|tofu)\b(?=[^;|&]*\sapply\b)(?=[^;|&]*\s-destroy\b)", "terraform destroy is never run by an agent"),
+    # Terraform takes `-destroy` and `--destroy` alike.
+    (r"\b(terraform|tofu)\b(?=[^;|&]*\sapply\b)(?=[^;|&]*\s--?destroy\b)", "terraform destroy is never run by an agent"),
     (r"\b(terraform|tofu)" + _OPTS + r"state\s+(rm|mv|push)\b", "manual Terraform state surgery must be done by a human"),
     (r"\b(terraform|tofu)\b(?=[^;|&]*\sapply\b)(?=[^;|&]*-auto-approve)", "terraform apply -auto-approve bypasses plan review"),
     (r"\b(terraform|tofu)" + _OPTS + r"workspace\s+delete\b", "deleting a Terraform workspace is irreversible"),
@@ -284,14 +285,16 @@ DENY_PATTERNS = [
 ]
 
 ASK_PATTERNS = [
-    (r"\b(terraform|tofu)\s+apply\b", "terraform apply"),
-    (r"\b(terraform|tofu)\s+import\b", "terraform import modifies state"),
+    # `apply tfplan` (a saved plan) applies without terraform's own confirmation prompt, so
+    # this ask is the only one it gets.
+    (r"\b(terraform|tofu)" + _OPTS + r"apply\b", "terraform apply"),
+    (r"\b(terraform|tofu)" + _OPTS + r"import\b", "terraform import modifies state"),
     (r"\b(kubectl|helm|kustomize)\b.*(--context|--kube-context)[= ]\S*prod", "kubectl/helm against a prod context"),
     (r"\bkubectl" + _OPTS + r"(apply|delete|patch|scale|drain|cordon)\b", "kubectl write operation"),
     (r"\bkubectl" + _OPTS + r"rollout\s+(?!status\b|history\b)", "kubectl write operation"),
     (r"\bhelm\s+(upgrade|install|rollback)\b", "helm release change"),
     (r"\b(aws|gcloud|az)\b.*(--profile|--project|--subscription)[= ]\S*prod", "cloud CLI against a prod account"),
-    (r"\b(terraform|tofu)\s+workspace\s+select\s+\S*prod", "selecting the prod Terraform workspace"),
+    (r"\b(terraform|tofu)" + _OPTS + r"workspace\s+select\s+\S*prod", "selecting the prod Terraform workspace"),
     (r"\bansible(-playbook)?\b.*(-i|--inventory)[= ]\S*prod", "ansible against prod inventory"),
     (r"(?:^|\s)(-e|--env|--environment)[= ]?prod(uction)?\b", "explicit prod environment flag"),
     (r"(?:^|\s)(ENV|ENVIRONMENT|STAGE|DEPLOY_ENV)=prod(uction)?\b", "prod environment variable"),
