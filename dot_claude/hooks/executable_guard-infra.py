@@ -212,6 +212,8 @@ DENY_PATTERNS = [
     (r"\bgsutil\s+(rm|rb)\b.*-r", "recursive GCS deletion"),
     (r"\baz\b(?=[^;|&]*\s(delete|purge)\b)(?=[^;|&]*\s(sql|keyvault|storage|vm|aks|group|postgres|mysql|cosmosdb|backup)\b)",
      "deleting a stateful Azure resource"),
+    # Diagnostic settings are where Azure resources send their audit logs.
+    (r"\baz" + _OPTS + r"monitor\s+diagnostic-settings\s+delete\b", "disabling audit logging or deleting backups"),
     # Databases
     (r"\bdrop\s+(database|table|schema)\b", "DROP DATABASE/TABLE/SCHEMA"),
     (r"\btruncate\s+table\b", "TRUNCATE TABLE"),
@@ -295,6 +297,11 @@ ASK_PATTERNS = [
     (r"\bhelm\s+(upgrade|install|rollback)\b", "helm release change"),
     (r"\b(aws|gcloud|az)\b.*(--profile|--project|--subscription)[= ]\S*prod", "cloud CLI against a prod account"),
     (r"\b(terraform|tofu)" + _OPTS + r"workspace\s+select\s+\S*prod", "selecting the prod Terraform workspace"),
+    # Any az delete the stateful-resource DENY did not take. That resource list is not
+    # exhaustive (vmss, disk, snapshot, webapp, lock, `resource --ids`), and `Bash(az:*)`
+    # in settings.json runs whatever the guard does not catch. Same `\s` before the verb
+    # as the DENY, for `rsync -az --delete`.
+    (r"\baz\b(?=[^;|&]*\s(delete|purge)\b)", "Azure delete"),
     (r"\bansible(-playbook)?\b.*(-i|--inventory)[= ]\S*prod", "ansible against prod inventory"),
     (r"(?:^|\s)(-e|--env|--environment)[= ]?prod(uction)?\b", "explicit prod environment flag"),
     (r"(?:^|\s)(ENV|ENVIRONMENT|STAGE|DEPLOY_ENV)=prod(uction)?\b", "prod environment variable"),
