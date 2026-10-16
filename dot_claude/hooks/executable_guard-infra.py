@@ -314,6 +314,9 @@ ASK_PATTERNS = [
     (r"\b(hdparm|nvme\s+format|blkdiscard|eject)\b", "low-level storage/device operation"),
     (r"\bsystemctl\s+(restart|stop|disable|mask)\b", "service restart/stop"),
     (r"\bssh\s+\S*(prod|robot|kiosk|device)", "ssh to a production/fleet host"),
+    # The push-naming rule below judges every `git push` and `gh pr create` it can read.
+    # These two stay as the net under it: a spelling the tokeniser does not see as a
+    # command (`git` and `push` on different lines, say) still asks rather than runs.
     (r"\bgit\s+push\b", "git push"),
     (r"\bgh\s+pr\s+create\b", "opening a pull request"),
     (r"\b(curl|wget)\b.*\bapi\.github\.com\b", "a direct call to the GitHub API"),
@@ -327,7 +330,316 @@ ASK_PATTERNS = [
 ]
 
 
+# The push-naming rule, CLAUDE.md Git rule 2: agent branches stay local, and the
+# orchestrator pushes finished work only as `git push origin agent/<a>/<t>:cramer/<name>`,
+# then opens the PR with `gh pr create --head cramer/<name>`. Both ask (the owner approves
+# each one); every other form denies. A regex cannot say "EVERY destination is under
+# cramer/" -- that is a quantifier over the refspecs -- so these two rules tokenise the
+# command instead, with the same piece grammar scrub() uses, so quoting is read the same
+# way everywhere. They run after DENY_PATTERNS (a force-push keeps its own deny) and
+# before ASK_PATTERNS.
+#
+# The verdict is deny unless the whole segment is read and every destination passes. An
+# option the rule does not know, a `$VAR` or `$(...)` in a ref, a glob, a redirection,
+# an unclosed quote: all deny. Whatever the rule cannot read, the owner cannot approve.
+PUSH_RULE = "agent work is pushed only as `git push origin agent/<agent>/<task>:cramer/<name>` (CLAUDE.md Git rule 2)"
+PR_RULE = "a PR is opened only as `gh pr create --head cramer/<name> --base <base>` (CLAUDE.md Git rule 2)"
+
+# A destination the owner has approved pushing to. The character class is what git
+# allows in a ref name minus the shell's specials, so `$NAME`, `$(...)`, `*` and `{a,b}`
+# fail here rather than being guessed at.
+_CRAMER_DEST = re.compile(r"(?:refs/heads/)?cramer/[A-Za-z0-9._/-]+")
+_CRAMER_HEAD = re.compile(r"(?:[A-Za-z0-9_.-]+:)?cramer/[A-Za-z0-9._/-]+")   # gh also takes owner:branch
+# `+` is a force; DENY_PATTERNS took it already, but the rule is sound on its own.
+_REFSPEC = re.compile(r"(?P<force>\+)?(?P<src>[A-Za-z0-9._/@^~-]*)(?::(?P<dst>[A-Za-z0-9._/-]*))?")
+# A configured remote name. A URL or a path (anything with `:` or `/`) is an inline
+# repoint of where the push goes, the same thing the `git remote set-url` deny stops.
+_REMOTE = re.compile(r"[A-Za-z0-9._-]+")
+
+# git push options the orchestrator has a reason to use. Anything else denies: the ones
+# that push or delete refs beyond the refspecs are named so the reason says why; the
+# rest are simply unknown to the rule.
+_PUSH_FLAGS = {"-n", "--dry-run", "-v", "--verbose", "-q", "--quiet", "-u", "--set-upstream",
+               "--porcelain", "--no-verify", "--atomic", "--progress", "--no-progress",
+               "-4", "--ipv4", "-6", "--ipv6", "--no-follow-tags"}
+_PUSH_SHORT_FLAGS = set("nvqu46")
+_PUSH_VALUE_OPTS = {"-o", "--push-option"}
+_PUSH_DENIED = {
+    "--all": "--all pushes every branch", "--branches": "--branches pushes every branch",
+    "--mirror": "--mirror pushes and deletes every ref", "--tags": "--tags pushes every tag",
+    "--follow-tags": "--follow-tags pushes tags, which are not under cramer/",
+    "--prune": "--prune deletes remote refs",
+    # Deleting a remote branch is not pushing work, so no approval covers it: the owner
+    # deletes a cramer/ branch on GitHub after the merge, in one click, if at all.
+    "--delete": "deleting a remote branch is the owner's to do on GitHub",
+    "-d": "deleting a remote branch is the owner's to do on GitHub",
+}
+
+# gh pr create options, from `gh pr create --help`. -R/--repo is gh's global override.
+_PR_FLAGS = {"-d", "--draft", "--dry-run", "-e", "--editor", "-f", "--fill", "--fill-first",
+             "--fill-verbose", "--no-maintainer-edit", "-w", "--web"}
+_PR_SHORT_FLAGS = set("defw")
+_PR_VALUE_OPTS = {"-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file",
+                  "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project",
+                  "--recover", "-r", "--reviewer", "-T", "--template", "-t", "--title",
+                  "-R", "--repo"}
+_PR_SHORT_VALUE_OPTS = set("aBbFHlmprTtR")
+
+# A quoted word that is itself a script (`sh -c "git push ..."`) is read as one.
+_NESTED_SCRIPT = re.compile(r"\bgit\s+push\b|\bgh\s+pr\b", re.IGNORECASE)
+_NESTING_LIMIT = 2
+
+
+def _words(text):
+    """Split a command into segments of words, seeing through quotes.
+
+    A word is (text, quoted, redir): the text as the shell would pass it (quotes removed,
+    adjacent pieces joined), whether any piece was quoted, and whether any piece is a
+    redirection. Segments break at `;`, `|`, `&`, parentheses and newlines. Raises
+    ValueError on an unreadable command (an unclosed quote), which the caller denies.
+    """
+    segments, seg, word, pos = [], [], None, 0
+    for m in _PIECE.finditer(text):
+        if m.start() != pos:
+            raise ValueError("unreadable quoting")
+        pos = m.end()
+        kind, piece = m.lastgroup, m.group()
+        if kind in ("quoted", "bare", "redir"):
+            if word is None:
+                word = ["", False, False]
+                seg.append(word)
+            word[0] += piece[1:-1] if kind == "quoted" else piece
+            word[1] = word[1] or kind == "quoted"
+            word[2] = word[2] or kind == "redir"
+        else:
+            word = None
+            if kind != "ws":
+                segments.append(seg)
+                seg = []
+    if pos != len(text):
+        raise ValueError("unreadable quoting")
+    segments.append(seg)
+    return [[tuple(w) for w in s] for s in segments if s]
+
+
+def _name(word):
+    """A word as a command name or subcommand: case-folded, with a backtick that opens
+    or closes a `...` substitution taken off so `` `git push ...` `` is still found.
+    """
+    return word[0].strip("`").lower()
+
+
+def _is_command(word, name):
+    """True when the word runs `name`: bare, quoted, or by an absolute path."""
+    return _name(word).rsplit("/", 1)[-1] == name
+
+
+def _judge_git_push(args, values):
+    """The verdict for the words after `git push`: ('deny' | 'ask', reason).
+
+    Adds to `values` the index of every word taken as an option's value.
+    """
+    def deny(what):
+        return "deny", f"git push: {what}; {PUSH_RULE}"
+
+    positional, dashdash, i = [], False, 0
+    while i < len(args):
+        text, _, redir = args[i]
+        if redir:
+            return deny("a redirection is not parsed; run the push on its own")
+        if dashdash or not text.startswith("-") or text == "-":
+            positional.append(text)
+        elif text == "--":
+            dashdash = True
+        elif text in _PUSH_DENIED:
+            return deny(_PUSH_DENIED[text])
+        elif text in _PUSH_FLAGS:
+            pass
+        elif text.partition("=")[0] in _PUSH_VALUE_OPTS:
+            if "=" not in text:
+                i += 1                              # `-o value`: the value is the next word
+                if i == len(args):
+                    return deny(f"{text} is missing its value")
+                values.add(i)
+        elif text.startswith("--"):
+            return deny(f"{text} is not an option the rule knows")
+        else:                                       # a short-flag cluster, `-un`
+            for k, letter in enumerate(text[1:]):
+                if letter in _PUSH_SHORT_FLAGS:
+                    continue
+                if letter == "d":
+                    return deny(_PUSH_DENIED["-d"])
+                if letter == "o":                   # `-o value` or `-ovalue`
+                    if not text[k + 2:]:
+                        i += 1
+                        if i == len(args):
+                            return deny("-o is missing its value")
+                        values.add(i)
+                    break
+                return deny(f"-{letter} is not an option the rule knows")
+        i += 1
+
+    if len(positional) < 2:
+        return deny("no refspec, so the push would go wherever the upstream or push.default points")
+    remote, refspecs = positional[0], positional[1:]
+    if not _REMOTE.fullmatch(remote):
+        return deny(f"the remote must be a configured name such as origin, not `{remote}`")
+    destinations = []
+    for refspec in refspecs:
+        m = _REFSPEC.fullmatch(refspec)
+        if not m:
+            return deny(f"refspec `{refspec}` is not a plain <src>:cramer/<name>")
+        if m["force"]:
+            return deny("a `+` refspec is a force-push")
+        src, dst = m["src"], m["dst"]
+        if dst is None:
+            dst = src                               # a bare `cramer/x` pushes the local branch of that name
+        elif not src:
+            return deny(_PUSH_DENIED["--delete"])   # `:ref` deletes the remote ref
+        if not _CRAMER_DEST.fullmatch(dst):
+            return deny(f"destination `{dst}` is not under cramer/")
+        destinations.append(dst)
+    return "ask", f"git push to {', '.join(destinations)} (the owner approves each push)"
+
+
+def _judge_gh_pr_create(args, values):
+    """The verdict for the words after `gh pr create`: ('deny' | 'ask', reason).
+
+    Adds to `values` the index of every word taken as an option's value.
+    """
+    def deny(what):
+        return "deny", f"gh pr create: {what}; {PR_RULE}"
+
+    heads, i = [], 0
+    while i < len(args):
+        text, _, redir = args[i]
+        if redir:
+            return deny("a redirection is not parsed; run the command on its own")
+        if text == "--" or text == "-" or not text.startswith("-"):
+            return deny(f"`{text}` is not an option; gh pr create takes no arguments")
+        name, eq, value = text.partition("=")
+        if text.startswith("--"):
+            if name in _PR_VALUE_OPTS:
+                if not eq:
+                    i += 1
+                    if i == len(args):
+                        return deny(f"{name} is missing its value")
+                    value = args[i][0]
+                    values.add(i)
+                if name == "--head":
+                    heads.append(value)
+            elif name not in _PR_FLAGS:
+                return deny(f"{name} is not an option the rule knows")
+        else:                                       # a short-flag cluster: `-df`, `-Hvalue`, `-H value`
+            for k, letter in enumerate(text[1:]):
+                if letter in _PR_SHORT_FLAGS:
+                    continue
+                if letter in _PR_SHORT_VALUE_OPTS:
+                    value = text[k + 2:].lstrip("=")
+                    if not value:
+                        i += 1
+                        if i == len(args):
+                            return deny(f"-{letter} is missing its value")
+                        value = args[i][0]
+                        values.add(i)
+                    if letter == "H":
+                        heads.append(value)
+                    break
+                return deny(f"-{letter} is not an option the rule knows")
+        i += 1
+
+    if not heads:
+        return deny("no --head, so gh would open the PR from whatever branch is checked out")
+    for head in heads:
+        if not _CRAMER_HEAD.fullmatch(head):
+            return deny(f"--head `{head}` is not under cramer/")
+    return "ask", f"opening a pull request from {', '.join(heads)}"
+
+
+def _gh_pr_create_args(seg, i):
+    """The words after `gh pr [-R repo] create` starting at seg[i], or None."""
+    if not (_is_command(seg[i], "gh") and i + 1 < len(seg) and _name(seg[i + 1]) == "pr"):
+        return None
+    j = i + 2
+    while j < len(seg):                             # gh's repo override may sit before the verb
+        text = seg[j][0]
+        if text in ("-R", "--repo"):
+            j += 2
+        elif text.startswith("--repo=") or (text.startswith("-R") and text != "-R"):
+            j += 1
+        else:
+            break
+    if j < len(seg) and _name(seg[j]) == "create":
+        return seg[j + 1:]
+    return None
+
+
+def _push_naming_verdicts(text, depth=0):
+    """Every verdict the two rules reach over the command, nested scripts included.
+
+    A quoted word holding `git push` or `gh pr` is read as a script (`sh -c "..."`),
+    unless a judge took it as an option's value: `--body "git push is guarded"` is prose.
+    A value holding `$(...)` or a backtick still runs, so it is still read.
+    """
+    verdicts = []
+    for seg in _words(GIT_GLOBAL_OPTS.sub("git ", text)):
+        values = set()                              # indexes into seg of words taken as option values
+        for i, word in enumerate(seg):
+            if _is_command(word, "git") and i + 1 < len(seg) and _name(seg[i + 1]) == "push":
+                taken = set()
+                verdicts.append(_judge_git_push(seg[i + 2:], taken))
+                values = {i + 2 + k for k in taken}
+                break
+            args = _gh_pr_create_args(seg, i)
+            if args is not None:
+                taken = set()
+                verdicts.append(_judge_gh_pr_create(args, taken))
+                values = {len(seg) - len(args) + k for k in taken}
+                break
+        if depth < _NESTING_LIMIT:
+            for i, word in enumerate(seg):
+                prose = i in values and "$(" not in word[0] and "`" not in word[0]
+                if word[1] and not prose and _NESTED_SCRIPT.search(word[0]):
+                    verdicts.extend(_push_naming_verdicts(word[0], depth + 1))
+    return verdicts
+
+
+def push_naming_verdict(cmd, flat):
+    """('deny' | 'ask', reason) for a command that pushes or opens a PR, else None.
+
+    `cmd` is the scrubbed command with its quotes intact; `flat` is normalize()'s stripped
+    form, used only as a cheap test for whether there is anything here to parse.
+    """
+    if not _NESTED_SCRIPT.search(flat):
+        return None
+    try:
+        verdicts = _push_naming_verdicts(cmd.replace("\\\n", " "))
+    except ValueError as e:
+        return "deny", f"git push / gh pr create: {e}; {PUSH_RULE}"
+    for decision in ("deny", "ask"):
+        for verdict in verdicts:
+            if verdict[0] == decision:
+                return verdict
+    return None
+
+
 MAX_COMMAND_CHARS = 8 * 1024
+
+
+def _output(decision, reason):
+    """Print the one PreToolUse verdict Claude Code reads."""
+    if decision == "deny":
+        reason = (f"Blocked by the command guard: {reason}. Hand the exact command to the human "
+                  f"to run manually, and explain the rollback path.")
+    else:
+        reason = f"Command guard: {reason} — confirm before running."
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision,
+            "permissionDecisionReason": reason,
+        }
+    }))
 
 
 def main() -> int:
@@ -356,31 +668,22 @@ def main() -> int:
         }))
         return 0
 
-    raw, flat = normalize(scrub(cmd))
+    scrubbed = scrub(cmd)
+    raw, flat = normalize(scrubbed)
 
     for pattern, reason in DENY_PATTERNS:
         if re.search(pattern, flat, re.IGNORECASE) or re.search(pattern, raw, re.IGNORECASE):
-            print(json.dumps({
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": (
-                        f"Blocked by the command guard: {reason}. Hand the exact command to the human "
-                        f"to run manually, and explain the rollback path."
-                    ),
-                }
-            }))
+            _output("deny", reason)
             return 0
+
+    verdict = push_naming_verdict(scrubbed, flat)
+    if verdict:
+        _output(*verdict)
+        return 0
 
     for pattern, reason in ASK_PATTERNS:
         if re.search(pattern, flat, re.IGNORECASE) or re.search(pattern, raw, re.IGNORECASE):
-            print(json.dumps({
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "ask",
-                    "permissionDecisionReason": f"Command guard: {reason} — confirm before running.",
-                }
-            }))
+            _output("ask", reason)
             return 0
 
     return 0
