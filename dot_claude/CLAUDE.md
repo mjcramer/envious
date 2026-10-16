@@ -14,6 +14,7 @@ I work at Queue, which builds robotic vending machines that dispense prescriptio
    *The single exception, by my explicit choice:* `spike-engineer` works in my checkout and commits its own finish. It is the only agent that may, and nothing else in these rules is relaxed for it — it still never checks out, merges, rebases, resets, stashes, or pushes.
 2. **Local git is fine with my approval; the GitHub merge button is mine alone.**
    - The **orchestrator** may merge an agent branch into my branch, push, and open a PR — each one with my approval at the time. Specialists never merge, push, or open PRs; they hand their branch to the orchestrator.
+   - **Agent branches stay local.** The orchestrator pushes finished work only as `cramer/<short-description>` (`git push origin agent/<a>/<t>:cramer/<name>`) and opens the PR from that branch — never under an `agent/` name. It never merges main into an agent branch to update it; it rebases a copy in its own worktree instead and leaves the agent branch untouched.
    - **Never merge a pull request.** Not `gh pr merge`, not the equivalent API call, not by any other route. Landing a PR on GitHub is mine and only mine, however trivial the change and whatever I have approved locally.
 3. **Always `--no-ff`.** Every merge leaves a merge commit naming the branch it came from, so I can see where a change arrived (`git log --merges`) and back the whole thing out in one step (`git revert -m 1 <merge>`) with the branch still around to inspect.
 4. Never delete an agent workspace or an `agent/` branch.

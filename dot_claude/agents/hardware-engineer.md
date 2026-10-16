@@ -68,7 +68,7 @@ Workspace: <path>    Branch: agent/hardware-engineer/<slug>    Base: <branch>
 Commits:   git log --oneline <base>..<branch>
 Review:    git diff <base>...<branch>
 Merge:     git checkout <base> && git merge --no-ff <branch>
-PR:        git push -u origin <branch> && gh pr create --head <branch> --base <base> --fill
+PR:        git push origin <branch>:cramer/<name> && gh pr create --head cramer/<name> --base <base> --fill
 ```
 
 ## Output format
