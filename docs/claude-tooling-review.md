@@ -1007,6 +1007,9 @@ lists, and every evasion the comments document. Step 2 adds the rows marked
 | *new, brew (decision 15):* `brew install python`; `brew install jq`; `brew upgrade`; `brew upgrade python@3.14`; `brew reinstall python`; `brew uninstall python`; `brew remove x`; `brew rm x`; `brew link --overwrite python`; `brew unlink python`; `brew tap foo/bar`; `brew untap foo/bar`; `brew cleanup`; `brew autoremove`; `brew pin python`; `brew unpin python`; `brew postinstall python`; `brew update`; `brew bundle`; `brew bundle install --file Brewfile`; `brew bundle cleanup --force --file Brewfile`; `brew bundle dump`; `brew services start x`; `brew services stop x`; `brew services restart x`; `brew services run x` | | *new, brew read-only:* `brew list`; `brew list python`; `brew info python`; `brew --prefix`; `brew --prefix python`; `brew --version`; `brew config`; `brew deps python`; `brew outdated`; `brew search python`; `brew doctor`; `brew bundle check --file Brewfile`; `brew bundle list`; `brew services list`; `brew services info x` |
 | *new, brew option-before-subcommand (as kubectl/terraform):* `brew --verbose install x`; `brew -v upgrade`; `brew -q install x`; `brew --debug tap foo/bar`; `brew bundle --file Brewfile install`; `brew bundle --verbose`; `HOMEBREW_NO_AUTO_UPDATE=1 brew install x`; `brew 'install' x` (quote stripping); `cd ~/envious && brew bundle`; `sh -c "brew install x"`; `brew install x \|\| true` | | `brew --verbose list`; `brew -v info python`; `brew bundle --file Brewfile check`; `grep -rn "brew install" .` (scrub); `git commit -m "deny brew install to agents"` (scrub); `rg "brew upgrade" docs/` (scrub) |
 | *new, make brew (decision 15):* `make brew`; `make -C ~/envious brew`; `make -n brew`; `make -j4 brew`; `make brew mac`; `cd ~/envious && make brew` | | `make test`; `make help`; `make -n test`; `grep brew Makefile` |
+| *new, chezmoi (decision 17):* `chezmoi apply`; `chezmoi apply -v`; `chezmoi apply ~/.zshrc`; `chezmoi apply --dry-run`; `chezmoi apply -n -v`; `chezmoi apply --init`; `chezmoi apply --help` (over-deny; `chezmoi help apply` is the allowed spelling); `chezmoi update`; `chezmoi update --apply=false`; `chezmoi init`; `chezmoi init mjcramer/envious`; `chezmoi init --apply`; `chezmoi init -a mjcramer`; `chezmoi init --one-shot mjcramer`; `chezmoi init --source . --apply`; `chezmoi edit ~/.zshrc --apply`; `chezmoi edit -a ~/.zshrc`; `chezmoi edit --watch ~/.zshrc`; `chezmoi state delete-bucket --bucket=scriptState`; `chezmoi state delete --bucket=x --key=y`; `chezmoi state reset`; `chezmoi state set --bucket=x --key=y --value=z`; `chezmoi destroy ~/.zshrc`; `chezmoi purge`; `chezmoi purge --force`; `chezmoi upgrade`; `chezmoi edit-config`; `chezmoi merge ~/.zshrc`; `chezmoi merge-all`; `chezmoi secret keyring set --service=s --user=u --value=v`; `chezmoi secret keyring delete --service=s --user=u`; `chezmoi ssh robot-7` | | *new, chezmoi read-only:* `chezmoi diff`; `chezmoi diff ~/.zshrc`; `chezmoi diff --init`; `chezmoi status`; `chezmoi verify`; `chezmoi managed -i files`; `chezmoi unmanaged`; `chezmoi ignored`; `chezmoi doctor`; `chezmoi data --format=yaml`; `chezmoi cat ~/.zshrc`; `chezmoi dump ~/.zshrc`; `chezmoi archive \| tar tvf -`; `chezmoi execute-template '{{ .chezmoi.os }}'`; `chezmoi --source . execute-template '#!{{ template "python-shebang" . }}'`; `chezmoi execute-template --init --promptString email=a@b.c < .chezmoi.toml.tmpl`; `chezmoi source-path`; `chezmoi target-path ~/.local/share/chezmoi/dot_zshrc`; `chezmoi cat-config`; `chezmoi dump-config`; `chezmoi state dump`; `chezmoi state data`; `chezmoi state get-bucket --bucket=scriptState`; `chezmoi secret keyring get --service=s --user=u`; `chezmoi help`; `chezmoi help apply`; `chezmoi help state delete-bucket`; `chezmoi --version`; `chezmoi generate install.sh`; `chezmoi completion fish`; *source-directory only (allowed; open question 2):* `chezmoi add ~/.zshrc`; `chezmoi re-add`; `chezmoi forget ~/.zshrc`; `chezmoi chattr +x ~/.zshrc`; `chezmoi edit ~/.zshrc`; `chezmoi edit --hardlink=false ~/.bashrc`; `chezmoi edit-config-template`; `chezmoi import --strip-components 1 x.tar.gz`; `chezmoi cd` |
+| *new, chezmoi option-before-subcommand and forms (as brew):* `chezmoi -v apply`; `chezmoi -n apply`; `chezmoi --dry-run apply`; `chezmoi --source . apply`; `chezmoi --source=. apply`; `chezmoi -S . apply`; `chezmoi -S 'my dir' apply`; `chezmoi -D /tmp/dest apply`; `chezmoi -v 'apply'` (quote stripping); `CHEZMOI_DEBUG=1 chezmoi apply`; `sh -c "chezmoi apply"`; `cd ~/envious && chezmoi apply`; `chezmoi diff && chezmoi apply`; `chezmoi apply \|\| true`; `chezmoi apply \`<newline>`-v` (line continuation); `/opt/homebrew/bin/chezmoi apply` | | `chezmoi diff -v`; `chezmoi status --init`; `chezmoi --source /tmp/scratch dump`; `chezmoi --source /tmp/scratch cat ~/.claude/hooks/guard-infra.py`; `grep -rn "chezmoi apply" docs/` (scrub); `git commit -m "deny chezmoi apply to agents"` (scrub); `rg "make apply" Makefile` (scrub) |
+| *new, Makefile routes (decision 17):* `make apply`; `make chez-apply`; `make chez-delete-state`; `make update`; `make init`; `make upgrade`; `make purge`; `make edit-config`; `make mac`; `make -C ~/envious apply`; `make -j4 chez-apply`; `make test apply` (goals run in order); `make 'apply'`; `cd ~/envious && make apply`; `make -n apply`; `make -n chez-delete-state`; `make -C ~/envious -n chez-apply` (dry-run make of an applying target: denied; open question 1) | | `make test`; `make help`; `make -n test`; `make -C ~/envious test`; `make diff`; `make -n diff`; `make status`; `make edit-config-template`; `grep -n apply Makefile`; `cat Makefile` |
 | `echo x > ~/.claude/agents/a.md`; `open('~/.claude/settings.json','w')` | `git checkout main`; `git stash` | `git stash list` |
 | `git -c remote.origin.url=evil push` (raw form, not stripped) | `git worktree add ../x` | `git worktree list` |
 | `GIT_CONFIG_KEY_0=remote.origin.url git push` | `-e prod`; `ENV=production make` | `grep -rn "drop table" .` (scrub) |
@@ -1057,11 +1060,11 @@ on 2026-10-14 (44 deny, 27 allow, no misses, no over-denies) from a scratch
 script, not from `tests/`; step 2 puts them in the table proper. Notes on the
 edges:
 
-- `brew update` is in the deny group although the human's list named neither
-  it nor the read-only set with it: it rewrites the tap checkouts under the
-  user-writable prefix (what `brew install` will later build from) and it is
-  the first thing `make brew` runs. If it should be allowed, strike it from
-  the regex and move its row; nothing else depends on it.
+- `brew update` is in the deny group **by decision 18 (2026-10-16)**: it
+  rewrites the tap checkouts under the user-writable prefix (what `brew
+  install` will later build from) and it is the first thing `make brew` runs.
+  It was first placed there on this review's judgement; the human confirmed
+  it. The regex and the row are unchanged.
 - Read-only verbs the human named (`list info --prefix --version config deps
   outdated search doctor`, `bundle check`, `bundle list`) are allowed by not
   being listed, which is the guard's default; the allow rows pin them so a
@@ -1079,11 +1082,164 @@ edges:
   agent writes and then executes is not (3.3 failure modes states what covers
   that and what does not). `chezmoi apply`, `make chez-apply` and the
   Makefile's `%:` catch-all (`make apply` runs `chezmoi apply`) all run `brew
-  bundle` legitimately on the human's behalf; none is guarded today (grep of
-  the guard and `settings.json`, 2026-10-14) and whether they should be is
-  open question 1 in section 9, not part of this group.
+  bundle` legitimately on the human's behalf; they were unguarded on
+  2026-10-14 and are denied to agents by the chezmoi group below (decision
+  17), so the before-script only ever runs under the human's own apply.
 - `sudo brew ...` is refused by Homebrew itself and asks via the `sudo` rule
   before the brew rule is reached; no row needed.
+
+**The `chezmoi` and Makefile rows (decision 17)** are one deny group with the
+message *"applying is the human's: hand over the exact `chezmoi diff` /
+`chezmoi apply` command and wait; agents never write chezmoi's target state
+or persistent state"* (the guard prefixes "Blocked by the command guard:" and
+appends its standing "hand the exact command to the human" sentence). Written
+in the same `_OPTS` form as the brew group, with one addition: a lookahead
+that leaves `chezmoi help <verb>` alone, because `_OPTS` spans any words
+between the tool and the verb and would otherwise deny the help text of every
+denied verb.
+
+```python
+# Decision 17: applying is the human's. Agents verify (diff, status, verify, ...), hand over the command, wait.
+_CHEZMOI_MSG = ("applying is the human's: hand over the exact chezmoi diff / chezmoi apply command "
+                "and wait; agents never write chezmoi's target state or persistent state")
+_CHEZMOI = r"\bchezmoi(?!\s+help\b)" + _OPTS        # `chezmoi help <verb>` is read-only and stays allowed
+(_CHEZMOI + r"(apply|update|init|destroy|purge|merge|merge-all|upgrade|edit-config(?!-)|ssh)\b", _CHEZMOI_MSG),
+(_CHEZMOI + r"edit\b(?=[^;|&]*\s(-\w*a\w*|--apply|--watch)\b)", _CHEZMOI_MSG),   # plain `edit` writes the source only
+(_CHEZMOI + r"state\s+(delete|delete-bucket|reset|set)\b", _CHEZMOI_MSG),
+(_CHEZMOI + r"secret\s+keyring\s+(set|delete)\b", _CHEZMOI_MSG),
+# Makefile: the explicit targets, and the goals the `%:` catch-all forwards to `chezmoi $*` (read 2026-10-16).
+(r"\bmake" + _OPTS + r"(apply|chez-apply|chez-delete-state|update|init|upgrade|purge|merge-all|edit-config(?!-)|mac)\b", _CHEZMOI_MSG),
+```
+
+Checked on 2026-10-16 the same way as the brew group: every chezmoi and make
+row above through the current guard's `scrub()`, `normalize()` and `_OPTS`
+from a scratch script (66 deny, 65 allow, no misses, no over-denies); step 2
+puts them in the table proper. `edit-config(?!-)` exists because `\b` sits
+between `g` and `-`, so a plain `edit-config\b` also matched
+`edit-config-template`, which writes the source only.
+
+**Every chezmoi verb, classified** (`chezmoi help <verb>` on chezmoi 2.72.1,
+2026-10-16; "source" is the source directory, "destination" the home
+directory, "state" `chezmoistate.boltdb`):
+
+| Verb | Writes | Verdict | Why |
+|---|---|---|---|
+| `apply` | destination, state; runs scripts | deny | the act itself; every spelling, including `--dry-run`/`-n` (below), `-D <dir>`, a target list, `--init` and `--help` (`chezmoi help apply` is the allowed spelling) |
+| `update` | source (git pull into it), then destination and state | deny | `--apply=false` still rewrites the source clone's checkout; all forms |
+| `init` | source (clone or `git init`); `~/.config/chezmoi/chezmoi.toml` from `.chezmoi.toml.tmpl`; `--apply`/`-a`/`--one-shot` also apply; `--purge`/`--purge-binary` delete | deny | all forms: the non-applying one still writes the config that steers every later apply; `execute-template --init` is the read-only simulation and stays allowed |
+| `edit --apply`, `-a`, `--watch` | source, then destination and state | deny | the flag is the apply; plain `edit` (source only; needs an editor and a tty) stays allowed |
+| `destroy` | source, destination, state | deny | removes the target everywhere |
+| `purge` | config, state, the source directory | deny | deletes the deployment clone and the state |
+| `merge`, `merge-all` | source; the destination file's real path is handed to the merge tool (`vimdiff` by default) | deny | the tool can write the destination and the docs do not say it will not; interactive; no agent use |
+| `upgrade` | the chezmoi binary; on a Homebrew install it runs `brew upgrade chezmoi` (docs: the `brew-upgrade` method is auto-detected) | deny | a host change, and a `brew` route decision 15 would otherwise miss |
+| `edit-config` | `~/.config/chezmoi/chezmoi.toml` | deny | steers every later apply (`sourceDir`, `destDir`, data) |
+| `secret keyring set`, `delete` | the OS keyring | deny | host state; `get` stays allowed |
+| `ssh` | another host (ssh in, init and apply there) | deny | nothing is applied to a fleet device by an agent |
+| `state delete`, `delete-bucket`, `reset`, `set` | state | deny | deleting `scriptState` makes every `run_once_`/`run_onchange_` script, the package installer among them, re-run at the human's next apply, silently; `make chez-delete-state` is exactly this |
+| `state data`, `dump`, `get`, `get-bucket` | nothing | allow | read the state |
+| `diff`, `status`, `verify`, `managed` (alias `list`), `unmanaged`, `ignored`, `doctor`, `data`, `cat`, `dump`, `archive`, `execute-template`, `source-path`, `target-path`, `cat-config`, `dump-config`, `generate`, `completion`, `license`, `help`, `--version` | nothing on the host (stdout, or a file named with `--output`) | allow | the verification set; `diff` shows script contents by default and `status` marks a script that would run with `R`, which is what makes a dry-run apply unnecessary |
+| `add` (alias `manage`), `re-add`, `chattr`, `forget` (alias `unmanage`), `import`, `edit` (plain), `edit-config-template`, `edit-encrypted` | source only (`import --remove-destination` removes "in the source state", docs) | allow | the human's criterion is destination or state; but on this Mac the source directory is `~/.local/share/chezmoi`, a second clone of the repo on `main`, not an agent worktree, so these change what the human's next apply deploys with no branch to review; open question 2 |
+| `cd` | nothing | allow | launches a shell in the source directory; hangs without a tty; harmless |
+| `git` | the source clone's git state | not in this group | the existing git rules match textually (`chezmoi git push --force` contains `git push --force`) |
+| `docker` | a container, not the host | not in this group | the ordinary docker rules apply |
+| `age`, `age-keygen`, `encrypt`, `decrypt` | files the agent names | not in this group | the path rules (self-protection, interpreter) apply |
+| `remove`, `rm` | nothing | nothing to deny | removed from chezmoi; prints an error |
+
+**`--dry-run` / `-n`: denied; this review's decision.** The evidence says a
+dry-run apply is harmless on all three axes. The global flag is "Do not make
+any modifications to the destination directory" and `chezmoi help apply`
+lists `chezmoi apply --dry-run --verbose` as an example (chezmoi 2.72.1,
+2026-10-16); the user guide says "In dry-run mode, scripts are not executed"
+(chezmoi.io, "Use scripts to perform actions", read 2026-10-16); and
+`internal/cmd/config.go` (master, read 2026-10-16) opens the persistent state
+read-only under `--dry-run` and copies it into a `NewMockPersistentState`, so
+even state writes go to a throwaway copy. It is denied anyway, for three
+reasons. Allowing it means the deny rule must prove the *absence* of dry-run,
+and `-n` can hide in a cluster (`-nv`, `-vn`), sit before or after the verb,
+and be negated (`--dry-run=false` is legal pflag), so the exception is a
+negative lookahead with holes of its own; "wrong answer is worse than no
+answer" picks the over-deny. Nothing is lost: `chezmoi diff` (script contents
+shown by default) and `chezmoi status` (`R` for a script that would run) give
+the same information, and the deny message names them. And the rule stays
+one alternation with no flag parsing. If the human wants dry-run back, the
+cost is the lookahead and two rows; nothing else moves.
+
+**The Makefile routes.** The Makefile (read 2026-10-16) has six explicit
+targets, `help`, `brew`, `mac`, `chez-apply` (`chezmoi apply -v`), `test` and
+`chez-delete-state` (`chezmoi state delete-bucket` for `entryState` and
+`scriptState`), and ends with
+
+```make
+%: ## Pass to chezmoi
+	chezmoi $*
+```
+
+`%:` is a match-anything pattern rule: any goal with no explicit rule in the
+Makefile and no file of that name in the directory is built by running
+`chezmoi <goal>`, so `make apply` runs `chezmoi apply`, `make update` runs
+`chezmoi update`, `make init` runs `chezmoi init`, `make upgrade` runs
+`chezmoi upgrade` and `make diff` runs `chezmoi diff`. Verified with `make -n`
+on 2026-10-16 for every target in the deny list and for `diff`, `test` and
+`test apply`. What shapes the rule:
+
+- Goals run in order, so `make test apply` runs the tests and then `chezmoi
+  apply` (`make -n` prints both). The make rule therefore looks for the goal
+  anywhere in the segment, which is what `_OPTS` already does; `make -C
+  ~/envious apply`, `make -j4 chez-apply` and `make test apply` all match.
+- Only the stem reaches chezmoi (`$*` is one word), so `make state
+  delete-bucket` is `chezmoi state` followed by `chezmoi delete-bucket`, an
+  error; it cannot delete state. The make list is therefore the chezmoi verbs
+  that are dangerous as a single word (`apply update init upgrade purge
+  merge-all edit-config`) plus the two explicit targets and `mac`.
+- `make mac` runs `scripts/bootstrap-mac.sh` and `bash
+  scripts/macos.defaults.sh || true`. Neither script exists in the repo (`ls
+  scripts`, 2026-10-16), so the target fails today; it is denied anyway
+  because the day the scripts return it is a host change, and a dead deny
+  costs nothing.
+- `make -n apply` is denied. It writes nothing (`-n` prints `chezmoi apply`
+  and stops), but allowing it needs the same absence-of-flag lookahead as
+  `--dry-run`, with a worse ambiguity: `-n` can hide in a cluster or follow
+  the goal, and `-In`, `-fn`, `-Cn` carry a value, not dry-run. The brew group
+  already pins `make -n brew` as denied. `make -n test`, `make -n diff` and
+  `make -n` of any non-applying goal are untouched. Open question 1 asks the
+  human to confirm, since the instruction was that `make -n ...` stays
+  allowed; the recommendation is to keep the deny and read the Makefile.
+- Looseness, as for every `_OPTS` rule: `make -C init test` or `chezmoi
+  managed apply` would be denied (a word from the alternation used as a
+  value); `echo "run chezmoi apply"` is denied because `echo` is not scrubbed
+  (as `echo "terraform destroy"` is today); `chezmoi --no-pager help apply`
+  is denied because the lookahead sees only an immediate `help`. Each is one
+  visible message with the allowed spelling in it.
+
+**The recovery path.** The guard is a `PreToolUse` hook with `"matcher":
+"Bash"` in `~/.claude/settings.json` (lines 235-241 on `main`): Claude Code
+runs it when it is about to execute a Bash *tool call*, and the guard
+classifies that call's command text. A terminal the human opens is not a tool
+call and nothing typed in it reaches the hook, so the human's own `chezmoi
+apply`, `make chez-apply` and `make chez-delete-state` are unaffected. That
+holds for every recovery in 3.3 (interpreter missing or too old: the guard
+blocks every agent Bash call; the human applies from a terminal), and it
+holds for `spike-engineer`: its licence to work in the human's checkout is a
+git rule, and the guard sees its Bash tool like any other agent's. Nothing in
+this design needs an agent to apply: `make test` is pre-apply by construction
+(6.1) and the self-test runs inside the human's apply (6.3).
+
+**What the group does not see.** The same residual as brew: `chezmoi apply`
+inside a script the agent writes and then runs, or produced by decoding, is
+not in the Bash tool's command text. One more is specific to chezmoi: the
+read-only verbs render templates, and chezmoi's `output`/`exec` template
+functions run commands at render time, so `chezmoi diff` on a `.tmpl` the
+agent has edited, or `chezmoi execute-template '{{ output "sh" "-c" "..." }}'`,
+runs whatever the template names. The inner text is still on the command line
+or in a file the agent wrote through the Write/Edit tools (the transcript
+shows it), and a literal payload is still matched (`{{ output "brew"
+"install" "x" }}` loses its quotes and meets the brew rule); an encoded one
+is not. Accepted: it is the script-on-disk gap in another form, and the
+read-only verbs are what agents verify with (`test_entrypoints.py` renders
+the partial through `execute-template`, 6.1). Raw writes to
+`~/.config/chezmoi/chezmoi.toml` or `chezmoistate.boltdb` with `tee`, `>` or
+`rm` are not in the group either (only the `edit-config` and `state` verbs
+are); open question 2 covers them together with the source clone.
 
 Also pinned: the output shape (`hookSpecificOutput.permissionDecision`,
 `hookEventName: PreToolUse`), exit code 0 on every path once the guard is
@@ -1174,7 +1330,7 @@ Steps 0 and 1 are on `main` (436ae03, a049b2e and the guard follow-ups).
 |---|---|---|---|---|---|
 | 0 | `.chezmoiignore` pycache lines; Makefile `unittest discover`; `tests/__init__.py`, `tests/support.py` | done | on `main` | | |
 | 1 | `tests/test_guard.py`: the regression table against the current guard, including the fail-open row | done | on `main` | done | |
-| 2 | **Pin the interpreter.** `.chezmoitemplates/python-shebang` with the three-way os/arch branch and `-ISB` (3.3, decisions 14, 16); rename `executable_guard-infra.py` and `executable_crew` to `.tmpl` with the header (3.3); `settings.json`: the four `python3 <path>` lines become direct, the guard's gains `\|\| exit 2`, `Edit(~/.claude/lib/**)` deny added; guard rules: self-protection `bin\|lib`, the interpreter-path deny group over both `/opt/homebrew` and `/usr/local` python paths, and the `brew`/`make brew` **deny** group with the packages.yaml message (6.2, decision 15); `tests/test_entrypoints.py` incl. `test_site_is_not_imported` and `test_imports_are_stdlib_or_ours`; `support.py` (`-ISB`) and `tests/__init__.py` per 6.1; the two guard probes, the interpreter prerequisite, the `site` probe and the per-os/arch shebang check added to the existing self-test (6.3); the self-test `include` lines follow the renames | 300 | `make test` incl. the *new* table rows (Intel paths, brew deny, brew read-only allow, option-before-subcommand, `make brew`); after `chezmoi apply`, `head -1 ~/.claude/hooks/guard-infra.py` is the per-OS/arch line ending `-ISB` and the self-test's new probes pass; by hand once: `sh -c "$(jq -r ...PreToolUse command...)"` with `PATH=` denies `terraform destroy`, and `brew install python` is denied with the packages.yaml message | **SR** (policy: backstop, interpreter-path deny incl. `/usr/local`, `brew`/`make brew` deny, `Edit` deny, `-ISB`) | Revert restores `env python3` and the `python3 <path>` lines; a stray `.chezmoitemplates/` file is inert |
+| 2 | **Pin the interpreter.** `.chezmoitemplates/python-shebang` with the three-way os/arch branch and `-ISB` (3.3, decisions 14, 16); rename `executable_guard-infra.py` and `executable_crew` to `.tmpl` with the header (3.3); `settings.json`: the four `python3 <path>` lines become direct, the guard's gains `\|\| exit 2`, `Edit(~/.claude/lib/**)` deny added; guard rules: self-protection `bin\|lib`, the interpreter-path deny group over both `/opt/homebrew` and `/usr/local` python paths, the `brew`/`make brew` **deny** group with the packages.yaml message (6.2, decision 15), and the `chezmoi`/Makefile **deny** group over every verb and make route that writes the destination or the persistent state, with the applying-is-the-human's message and the `help` lookahead (6.2, decision 17); `tests/test_entrypoints.py` incl. `test_site_is_not_imported` and `test_imports_are_stdlib_or_ours`; `support.py` (`-ISB`) and `tests/__init__.py` per 6.1; the two guard probes, the interpreter prerequisite, the `site` probe and the per-os/arch shebang check added to the existing self-test (6.3); the self-test `include` lines follow the renames | 330 | `make test` incl. the *new* table rows (Intel paths, brew deny, brew read-only allow, option-before-subcommand, `make brew`, chezmoi deny, chezmoi read-only and source-only allow, chezmoi forms, Makefile routes); after `chezmoi apply`, `head -1 ~/.claude/hooks/guard-infra.py` is the per-OS/arch line ending `-ISB` and the self-test's new probes pass; by hand once: `sh -c "$(jq -r ...PreToolUse command...)"` with `PATH=` denies `terraform destroy`, `brew install python` is denied with the packages.yaml message, `chezmoi apply` and `make apply` are denied with the applying-is-the-human's message, and `chezmoi diff` and `chezmoi help apply` are allowed | **SR** (policy: backstop, interpreter-path deny incl. `/usr/local`, `brew`/`make brew` deny, `chezmoi`/Makefile deny incl. the dry-run and `make -n` over-denies and the `help` lookahead, `Edit` deny, `-ISB`) | Revert restores `env python3` and the `python3 <path>` lines; a stray `.chezmoitemplates/` file is inert |
 | 3 | Guard restructure: `guard_rules.py` + engine; `classify()`; `Word`/`Piece`; drop the duplicate comment; fail-open and cannot-start docstrings | 300 | the full table unchanged (no row moves) | **SR** (refactor; the table is the proof) | Revert restores the single file; a stray `guard_rules.py` is inert |
 | 4 | `lib/claudetools/{__init__,hookio,gitx}.py` extracted; `crew` imports them via the appended `lib` path; absorbs `Capture`/`debug_dir`/docstring from the branch (2.8) | 300 | existing bash self-test green; `make test` | | Revert: `crew` self-contained again; stray `lib/` inert |
 | 5 | `launches.py` + `workspace.py` extracted (with `free_suffix` and the `settle`/`adopt_branch` merge); absorbs the poll, `match_launch`, the 2.1.287 note; `tests/test_launches.py`, `tests/test_workspace.py` | 340 | self-test; new unit tests | | Behaviour change is limited to the merged rename path and the new 2 s wait |
@@ -1197,8 +1353,9 @@ step; sizes are the upper bound, not a target.
 Suggested first task for `craft-engineer`: **step 2.** It is the one piece
 every later step depends on, it is the only step that changes what runs the
 guard, and it is small enough for `security-reviewer` to read whole. It was
-blocked on old open question 1 (Intel) and is unblocked by decisions 14-16;
-nothing in section 9 gates it now.
+blocked on the Intel question and is unblocked by decisions 14-16; decisions
+17-18 add one deny group to its scope (6.2) without blocking it, and nothing
+in section 9 gates it now.
 
 ## 8. Options considered and rejected
 
@@ -1260,30 +1417,71 @@ nothing in section 9 gates it now.
   who wrote them, and the 4 ms is a bonus.
 - **`-I -S -B` as three shebang tokens.** Works on macOS, breaks on Linux
   (3.3); `-ISB` only.
+- **`chezmoi apply` as an `ask`, not a deny.** Rejected by decision 17 on the
+  same ground as decision 15: an ask invites "apply, to check my work", and
+  there is no legitimate agent use; the human applies, from a terminal the
+  guard never sees.
+- **Allow `chezmoi apply --dry-run` / `-n`.** Rejected (this review, 6.2):
+  harmless by the evidence, but the exception must prove the absence of a
+  flag that can be clustered, moved after the verb and negated
+  (`--dry-run=false`); `chezmoi diff` and `chezmoi status` give the same
+  information, so the over-deny costs nothing.
+- **An option-aware prefix for the chezmoi rules instead of `_OPTS`**
+  (`(?:\s+-\S+(?:\s+[^-\s;|&]\S*)?)*`, "options, each with at most one bare
+  value"). It would allow `chezmoi help apply` without a lookahead, but it
+  misses `chezmoi -S 'my dir' apply` (once the quotes are stripped the value
+  is two tokens) and departs from the shape every other rule uses. The
+  `(?!\s+help\b)` lookahead is one token and was checked against the rows.
+- **Deny every `chezmoi` verb.** Rejected: agents verify with `diff`,
+  `status`, `verify`, `cat`, `dump` and `execute-template`, and
+  `test_entrypoints.py` and the self-test depend on `--source <scratch>
+  execute-template`/`dump`/`cat` (3.3, 6.1).
+- **Allow `make -n <applying target>` through a lookahead.** Deferred to open
+  question 1: `-n` can follow the goal or hide in a cluster, and `-In`, `-fn`,
+  `-Cn` are a value, not dry-run, so the lookahead is unsound in the allow
+  direction; the brew group already denies `make -n brew`.
+- **Deny the source-directory verbs (`add`, `re-add`, `chattr`, `forget`,
+  `import`, plain `edit`).** Not rejected and not decided: the human's
+  criterion for decision 17 is destination or state, which these do not
+  touch; what they do touch is raised as open question 2.
 
 ## 9. Open questions for the human
 
 None of these gates step 2.
 
-1. **Is `chezmoi apply` (and the Makefile routes to it) guarded?** Decision
-   15 says only chezmoi runs `brew`, which makes `chezmoi apply` the one
-   command through which an agent could still change installed packages
-   (its before-script runs `brew bundle` from `.chezmoidata/packages.yaml`,
-   which an agent can edit; `packages.yaml` is a plain file under no deny
-   rule). Today neither the guard nor `settings.json` mentions `chezmoi`,
-   `make chez-apply`, or the Makefile's `%:` catch-all (`make apply` is
-   `chezmoi apply`) (grep, 2026-10-14). The human's working rules already say
-   no host changes without asking, and this doc assumes `chezmoi apply` is the
-   human's act throughout. Whether it should be a guard `ask` or `deny` is a
-   policy decision outside this review; raised, not designed.
-2. **`brew update` in the deny group.** Not in either of the human's lists
-   (6.2 explains why it was put in deny). Confirm, or strike it; one regex
-   alternation and one row either way.
+1. **`make -n apply` (and `make -n` of any other applying target) is denied;
+   confirm, or allow it.** The instruction for decision 17 was that read-only
+   make (`make test`, `make -n ...`) stays allowed, and `make -n test` does.
+   Denying `-n` on the applying targets is this review's call (6.2, "The
+   Makefile routes"): allowing it needs a lookahead that must tell `-n` from
+   `-In`/`-fn`/`-Cn` and find it before or after the goal, and the brew group
+   already denies `make -n brew`. Recommendation: keep the deny; an agent that
+   wants to know what `make apply` runs reads the Makefile. If allowed: one
+   lookahead and three rows move to the allow column.
+2. **The source directory is a second clone, not the agent's worktree:
+   should the source-writing verbs be denied too?** `chezmoi source-path` is
+   `~/.local/share/chezmoi` on this Mac, a clone of `mjcramer/envious` on
+   `main` (read 2026-10-16). `add`, `re-add`, `chattr`, `forget`, `import`,
+   plain `edit`, `edit-config-template` and `chezmoi git` write there, and
+   `update --apply=false` pulls there. Decision 17 leaves them allowed because
+   they touch neither the destination nor the state, but a change there is
+   what the human's next `chezmoi apply` deploys, it is on no agent branch,
+   and `chezmoi diff` does not show it (after `chezmoi add ~/.zshrc` the
+   source matches the destination, so the diff is empty). Raw writes to
+   `~/.config/chezmoi/` (the config and the state file) are in the same
+   position. Recommendation: deny those verbs unless `--source`/`-S` names a
+   path (the agent's worktree is the legitimate target: `chezmoi -S
+   <worktree> add ~/.zshrc`), and add `\.config/chezmoi/` and
+   `\.local/share/chezmoi/` to the path-deny rows the interpreter group
+   already uses for `rm mv cp tee > >>`. Not designed until the human says
+   yes: it is a policy call about where agents may stage dotfile changes.
 
-Old questions 1 (Intel), 2 (`brew` breadth) and 3 (`-S`) are answered by
-decisions 14-16 (section 1b). Older questions 1 (mise pin) and 3 (`ask` vs
-`deny` with no interpreter) are moot; older question 2 (the backstop) was
-defaulted to yes and is a measured, tested part of the design.
+Old questions 1 (`chezmoi apply` unguarded) and 2 (`brew update`) are
+answered by decisions 17-18 (section 1b). Older questions 1 (Intel), 2 (`brew`
+breadth) and 3 (`-S`) are answered by decisions 14-16. Oldest questions 1
+(mise pin) and 3 (`ask` vs `deny` with no interpreter) are moot; oldest
+question 2 (the backstop) was defaulted to yes and is a measured, tested part
+of the design.
 
 ## 10. Hand-offs
 
@@ -1294,14 +1492,64 @@ defaulted to yes and is a measured, tested part of the design.
   `|| exit 2` backstop, `-ISB` and the stdlib-only constraint it hardens
   (5.4), the `sys.path.append` rule, the interpreter-path deny group over both
   Homebrew prefixes, the `brew`/`make brew` deny group and its regexes with
-  the residual-risk statement (6.2, 3.3), the `Edit(~/.claude/lib/**)` deny,
-  the env-block note in 2.5, and open question 1 (`chezmoi apply` unguarded)
-  as a policy item to take to the human.
+  the residual-risk statement (6.2, 3.3), the `chezmoi`/Makefile deny group
+  and its five regexes (the `help` lookahead, the dry-run and `make -n`
+  over-denies, the verb classification, the template-time `output` residual
+  and the recovery-path statement, all in 6.2), the `Edit(~/.claude/lib/**)`
+  deny, the env-block note in 2.5, and open questions 1-2 (section 9) as
+  policy items to take to the human.
 - `infra-engineer`: nothing; no new infrastructure.
 
 ## 11. Change log
 
-### 11.1 Changes from e31a951 (2026-10-13)
+### 11.1 Changes from d4a896e (2026-10-14)
+
+Recorded 2026-10-16. Decisions 17-18 (section 1b) are the human's; they
+answer the two open questions of d4a896e. Nothing else in the design moved.
+
+- **`chezmoi apply` denied to agents (decision 17).** Conclusion 5 and 1b
+  state it. 6.2 gains the group: five regexes (chezmoi verbs; `edit
+  --apply|-a|--watch`; the `state` writers; `secret keyring set|delete`; the
+  Makefile routes) with the applying-is-the-human's message and a `help`
+  lookahead; a classification of every chezmoi 2.72.1 verb with verdict and
+  reason; the Makefile analysis (`%:` catch-all, goals run in order, the
+  single-word stem, `make mac`'s missing scripts); the `--dry-run` decision
+  (denied, with the evidence from `chezmoi help`, the scripts user guide and
+  `internal/cmd/config.go`); the recovery path (the guard is a `PreToolUse`
+  hook on the Bash tool and never sees the human's terminal); the residuals
+  (script on disk; template-time `output`; raw writes to config and state).
+  Three regression rows: chezmoi deny beside read-only and source-only
+  allow, forms (option-before-subcommand, quotes, env prefix, `sh -c`,
+  chains, continuation, absolute path), Makefile routes beside read-only
+  make. 3.3's "fix from a terminal" paragraph and its brew failure-mode
+  bullet, and the brew-notes bullet in 6.2, point at the decision instead of
+  old open question 1. Step 2 (7) absorbs the group in its scope, gate and
+  SR column; 10 adds it to the `security-reviewer` surface; 8 lists the
+  rejected `ask`, dry-run exception, option-aware prefix, deny-everything
+  and `make -n` lookahead.
+- **`brew update` confirmed (decision 18).** The 6.2 note is reworded; the
+  regex and the row are unchanged.
+- **Correction (3.2, option D).** The repo has a `.chezmoi.toml.tmpl` (on
+  `main`); the earlier "no config template today" was wrong. The rejection
+  stands on the ground that only `init`/`--init` renders it.
+- **Verified 2026-10-16 on this Mac (darwin/arm64, chezmoi 2.72.1):**
+  `chezmoi help <verb>` for every verb in the classification; `chezmoi
+  source-path` and the clone it names (`.git/HEAD` on `main`, origin
+  `mjcramer/envious`); `make -n` for `apply`, `chez-apply`,
+  `chez-delete-state`, `update`, `init`, `upgrade`, `mac`, `diff`, `test`
+  and `test apply`; `ls scripts` (absent); `settings.json` lines 235-241
+  (`PreToolUse`, matcher `Bash`); the five regexes against all 131 rows
+  through the current guard's `scrub()`/`normalize()`/`_OPTS` from a scratch
+  script (66 deny, 65 allow, no misses, no over-denies). **Read, not run:**
+  chezmoi.io on dry-run and scripts, `merge`, `import` and `upgrade`;
+  `internal/cmd/config.go` on master for the dry-run persistent state.
+  **Not run:** anything that applies, changes state or runs brew; no
+  `chezmoi apply --dry-run` either, since the rule is to hand it over.
+- **Open questions (9)** are now: `make -n` of an applying target (denied;
+  confirm) and the source-directory verbs with the config/state paths
+  (allowed; recommend deny). Step 2 stays unblocked.
+
+### 11.2 Changes from e31a951 (2026-10-13)
 
 Recorded 2026-10-14. Decisions 14-16 (section 1b) are the human's; they
 answer the three open questions of e31a951 and everything below follows from
@@ -1362,7 +1610,7 @@ them. Nothing else in the design moved.
   be guarded (raised by decision 15, not designed), and `brew update`.
   Step 2 is unblocked (7, 10).
 
-### 11.2 Changes from 8612dd6 (2026-10-05)
+### 11.3 Changes from 8612dd6 (2026-10-05)
 
 Recorded 2026-10-13. Decisions 8-13 (section 1b) are the human's, not this
 review's; the sections below follow from them.
