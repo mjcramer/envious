@@ -83,9 +83,6 @@ chezmoi apply
 - `private_dot_config/` — application configs (git, fish, zsh, nvim, iterm2, etc.)
 - `Brewfile` — Homebrew bundle for macOS
 
-### Related: Nix-based setup
-Prefer declarative provisioning with Nix? See the companion repo `nix-envy` in this workspace for a flake-based macOS/Linux configuration.
-
 ### Safety and overrides
 - Review scripts in `.chezmoiscripts/` before first apply
 - Adjust package lists and templates to your environment
