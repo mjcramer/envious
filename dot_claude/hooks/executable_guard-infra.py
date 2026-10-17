@@ -356,9 +356,10 @@ _CRAMER_DEST = re.compile(r"(?:refs/heads/)?cramer/[A-Za-z0-9._/-]+")
 _CRAMER_HEAD = re.compile(r"(?:[A-Za-z0-9_.-]+:)?cramer/[A-Za-z0-9._/-]+")   # gh also takes owner:branch
 # `+` is a force; DENY_PATTERNS took it already, but the rule is sound on its own.
 _REFSPEC = re.compile(r"(?P<force>\+)?(?P<src>[A-Za-z0-9._/@^~-]*)(?::(?P<dst>[A-Za-z0-9._/-]*))?")
-# A configured remote name. A URL or a path (anything with `:` or `/`) is an inline
-# repoint of where the push goes, the same thing the `git remote set-url` deny stops.
-_REMOTE = re.compile(r"[A-Za-z0-9._-]+")
+# The one remote the rule names. Anything else -- another configured remote, a URL, a
+# path such as `.` -- sends the push somewhere the owner did not approve, the same thing
+# the `git remote set-url` deny stops. Compared exactly: a remote name is case-sensitive.
+_REMOTE = "origin"
 
 # git push options the orchestrator has a reason to use. Anything else denies: the ones
 # that push or delete refs beyond the refspecs are named so the reason says why; the
@@ -486,8 +487,8 @@ def _judge_git_push(args, values):
     if len(positional) < 2:
         return deny("no refspec, so the push would go wherever the upstream or push.default points")
     remote, refspecs = positional[0], positional[1:]
-    if not _REMOTE.fullmatch(remote):
-        return deny(f"the remote must be a configured name such as origin, not `{remote}`")
+    if remote != _REMOTE:
+        return deny(f"the remote must be {_REMOTE}, not `{remote}`")
     destinations = []
     for refspec in refspecs:
         m = _REFSPEC.fullmatch(refspec)
