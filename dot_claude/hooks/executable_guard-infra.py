@@ -186,6 +186,10 @@ def scrub(cmd: str) -> str:
 # `A[^;|&]*B[^;|&]*C` costs one scan per candidate B, which a repeated word turns cubic.
 _OPTS = r"\b[^;|&]*?\s"
 
+# gh's repo override, `-R o/r`, `--repo o/r`, `--repo=o/r` or `-Ro/r`. It is a persistent
+# flag, so it may sit before or after `pr`, and `\bgh\s+pr\s+merge` misses it either way.
+_GH_REPO = r"(?:(?:-R|--repo)\s+\S+|--repo=\S+|-R\S+)\s+"
+
 DENY_PATTERNS = [
     # Terraform / OpenTofu
     (r"\b(terraform|tofu)" + _OPTS + r"destroy\b", "terraform destroy is never run by an agent"),
@@ -219,7 +223,7 @@ DENY_PATTERNS = [
     (r"\btruncate\s+table\b", "TRUNCATE TABLE"),
     (r"\bpg_dropcluster\b", "dropping a Postgres cluster"),
     # Git / GitHub
-    (r"\bgh\s+pr\s+merge\b", "landing a pull request is the human's call alone"),
+    (r"\bgh\s+(?:" + _GH_REPO + r")?pr\s+(?:" + _GH_REPO + r")?merge\b", "landing a pull request is the human's call alone"),
     (r"\bgh\s+api\b.*/pulls/[^/\s]+/merge", "merging a pull request through the API"),
     (r"api\.github\.com.*/pulls/[^/\s]+/merge", "merging a pull request through the API"),
     (r"\bmergePullRequest\b", "merging a pull request through the GraphQL API"),
@@ -318,7 +322,7 @@ ASK_PATTERNS = [
     # These two stay as the net under it: a spelling the tokeniser does not see as a
     # command (`git` and `push` on different lines, say) still asks rather than runs.
     (r"\bgit\s+push\b", "git push"),
-    (r"\bgh\s+pr\s+create\b", "opening a pull request"),
+    (r"\bgh\s+(?:" + _GH_REPO + r")?pr\s+(?:" + _GH_REPO + r")?(?:create|new)\b", "opening a pull request"),
     (r"\b(curl|wget)\b.*\bapi\.github\.com\b", "a direct call to the GitHub API"),
     (r"\bgh\s+workflow\s+(run|dispatch)\b", "dispatching a workflow, which may merge on your behalf"),
     (r"\bgh\s+pr\s+review\b.*--approve", "approving a pull request"),
@@ -386,7 +390,7 @@ _PR_VALUE_OPTS = {"-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--b
 _PR_SHORT_VALUE_OPTS = set("aBbFHlmprTtR")
 
 # A quoted word that is itself a script (`sh -c "git push ..."`) is read as one.
-_NESTED_SCRIPT = re.compile(r"\bgit\s+push\b|\bgh\s+pr\b", re.IGNORECASE)
+_NESTED_SCRIPT = re.compile(r"\bgit\s+push\b|\bgh\s+(?:" + _GH_REPO + r")?pr\b", re.IGNORECASE)
 _NESTING_LIMIT = 2
 
 
@@ -556,12 +560,13 @@ def _judge_gh_pr_create(args, values):
     return "ask", f"opening a pull request from {', '.join(heads)}"
 
 
-def _gh_pr_create_args(seg, i):
-    """The words after `gh pr [-R repo] create` starting at seg[i], or None."""
-    if not (_is_command(seg[i], "gh") and i + 1 < len(seg) and _name(seg[i + 1]) == "pr"):
-        return None
-    j = i + 2
-    while j < len(seg):                             # gh's repo override may sit before the verb
+def _after_repo_flags(seg, j):
+    """The index of the first word at or after seg[j] that is not gh's repo override.
+
+    `-R`/`--repo` is a persistent flag, so it may sit between `gh` and `pr` or between
+    `pr` and the verb.
+    """
+    while j < len(seg):
         text = seg[j][0]
         if text in ("-R", "--repo"):
             j += 2
@@ -569,7 +574,21 @@ def _gh_pr_create_args(seg, i):
             j += 1
         else:
             break
-    if j < len(seg) and _name(seg[j]) == "create":
+    return j
+
+
+def _gh_pr_create_args(seg, i):
+    """The words after `gh [-R repo] pr [-R repo] create` starting at seg[i], or None.
+
+    `new` is gh's own alias for `create` and is judged the same way.
+    """
+    if not _is_command(seg[i], "gh"):
+        return None
+    j = _after_repo_flags(seg, i + 1)
+    if not (j < len(seg) and _name(seg[j]) == "pr"):
+        return None
+    j = _after_repo_flags(seg, j + 1)
+    if j < len(seg) and _name(seg[j]) in ("create", "new"):
         return seg[j + 1:]
     return None
 
