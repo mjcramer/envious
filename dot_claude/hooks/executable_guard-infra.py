@@ -335,18 +335,19 @@ ASK_PATTERNS = [
 
 
 # The push-naming rule, CLAUDE.md Git rule 2: agent branches stay local, and the
-# orchestrator pushes finished work only as `git push origin agent/<a>/<t>:cramer/<name>`,
-# then opens the PR with `gh pr create --head cramer/<name>`. Both ask (the owner approves
-# each one); every other form denies. A regex cannot say "EVERY destination is under
-# cramer/" -- that is a quantifier over the refspecs -- so these two rules tokenise the
-# command instead, with the same piece grammar scrub() uses, so quoting is read the same
-# way everywhere. They run after DENY_PATTERNS (a force-push keeps its own deny) and
+# orchestrator pushes finished work only from its integration worktree, as
+# `git push origin agent/orchestrator/<task>:cramer/<name>`, then opens the PR with
+# `gh pr create --head cramer/<name>`. Both ask (the owner approves each one); every
+# other form denies. A regex cannot say "EVERY destination is under cramer/" -- that
+# is a quantifier over the refspecs -- so these two rules tokenise the command
+# instead, with the same piece grammar scrub() uses, so quoting is read the same way
+# everywhere. They run after DENY_PATTERNS (a force-push keeps its own deny) and
 # before ASK_PATTERNS.
 #
 # The verdict is deny unless the whole segment is read and every destination passes. An
 # option the rule does not know, a `$VAR` or `$(...)` in a ref, a glob, a redirection,
 # an unclosed quote: all deny. Whatever the rule cannot read, the owner cannot approve.
-PUSH_RULE = "agent work is pushed only as `git push origin agent/<agent>/<task>:cramer/<name>` (CLAUDE.md Git rule 2)"
+PUSH_RULE = "agent work is pushed only as `git push origin agent/orchestrator/<task>:cramer/<name>` from the integration worktree (CLAUDE.md Git rule 2)"
 PR_RULE = "a PR is opened only as `gh pr create --head cramer/<name> --base <base>` (CLAUDE.md Git rule 2)"
 
 # A destination the owner has approved pushing to. The character class is what git
