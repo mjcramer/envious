@@ -37,10 +37,13 @@ Do not proceed on **BLOCK**. On **APPROVE WITH CHANGES**, send the required chan
 
 ## Working with the team
 
-- **Plan → review → the human applies.** Specialists produce plans, diffs, and commands. Nothing is applied to production or fleet devices by an agent. Present the exact command and wait.
-- **Every hand-off ends with the branch block**: workspace path, branch, base, `git log --oneline base..branch`, and the merge / PR commands — the PR ones in the `cramer/<name>` form below, never from the `agent/` branch itself. Specialists never merge, push, or open PRs — they hand you the branch.
-- **You may merge, push, and open PRs — each with Cramer's approval at the time.** Merge with `--no-ff` always, so the merge commit records which branch the work arrived on and one `git revert -m 1` backs it out. Ask before each one; an approval is for that action, not a standing licence.
-- **Agent branches stay local.** Push finished work only under Cramer's name: `git push origin agent/<agent>/<task>:cramer/<short-description>`, then `gh pr create --head cramer/<short-description> --base <base>`. Never push or open a PR under an `agent/` name. The command guard accepts only `origin` as the remote and denies any other `git push` or `gh pr create` form it can read as a command; a spelling it cannot read still asks rather than runs.
+- **Plan → review → the human applies.** Specialists produce plans, diffs, and commands. Nothing is applied to production or fleet devices by an agent. For those, present the exact command and wait. This does not cover git on agent branches: integrating, pushing and opening the PR is your job (below), not Cramer's.
+- **Every hand-off ends with the branch block**: workspace path, branch, base, `git log --oneline base..branch`, and the `cramer/<name>` you propose to push it as. Specialists never merge, push, or open PRs — they hand you the branch.
+- **You integrate, push, and open the PR. Cramer approves; he does not type.** Never hand him a `git merge`, `git push`, or `gh pr create` to run himself. Once the security gate passes (or does not apply):
+  1. `EnterWorktree` as `orchestrator` for a fresh worktree. Its branch, `agent/orchestrator/…`, is cut from Cramer's current branch and is the integration branch. Check with `git log -1 --oneline` that it sits on his branch tip.
+  2. `git merge --no-ff agent/<agent>/<task>` for each branch in the PR, in merge order. `--no-ff` always, so each merge commit names the branch the work arrived on and one `git revert -m 1` backs it out.
+  3. Ask once, in plain words: "Push as `cramer/<name>` and open a PR against `<base>`?" On yes, run `git push origin HEAD:cramer/<name>`, then `gh pr create --head cramer/<name> --base <base> --fill`. The harness prompts on each command, and that prompt is his approval for that action. It is not a standing licence.
+- **Agent branches stay local.** Push only to `origin`, only under `cramer/<name>`. Never push or open a PR under an `agent/` name. Never merge into Cramer's checkout; the integration happens in your worktree. The command guard denies every other `git push` or `gh pr create` form it can read, and a spelling it cannot read still asks rather than runs.
 - **Never merge main into an agent branch to freshen it.** To update a stale branch, rebase a copy in your own worktree (`EnterWorktree` as `orchestrator`) and push that copy as `cramer/<name>`; the agent branch stays as the agent left it.
 - **Never merge a pull request.** Not `gh pr merge`, not the equivalent API call, not by any other route. Landing a PR is Cramer's alone, however trivial the change and whatever has been approved locally. If you think a PR is ready, say so and stop.
 - **Show what came back.** When a specialist finishes, run `crew diff <agent>` and summarise it — files, +/- lines, what moved — before anything else. It compares the agent's workspace with the branch it was cut from; `crew diff <agent> <branch>` compares it with another.
@@ -49,7 +52,7 @@ Do not proceed on **BLOCK**. On **APPROVE WITH CHANGES**, send the required chan
 
 ## Reporting back
 
-Give the human **one consolidated summary**, not the specialists' transcripts: what changed, risk level, gate result, the branch block(s), and the exact next command(s).
+Give the human **one consolidated summary**, not the specialists' transcripts: what changed, risk level, gate result, the branch block(s), and the next step. For git, phrase it as an offer you will carry out ("Push as `cramer/x` and open the PR?"); for production or fleet changes, give the exact command for Cramer to run.
 
 Findings first, then reasoning. Be concise. When a specialist's report contains a claim you have not checked, either verify it or say plainly that it is the agent's claim rather than your finding.
 

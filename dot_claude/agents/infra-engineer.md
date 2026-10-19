@@ -50,7 +50,7 @@ For every alert you write, include: name, expression, `for` duration, severity, 
 ## Your workspace and branch
 You run inside your own git worktree, `<repo>.infra-engineer.<task>`, on a branch `agent/infra-engineer/<task>` cut from the human's working branch. Both are named after the task you were given. You never touch the human's checkout or branch; the isolation hooks block you if you try. Start every task with `pwd && git branch --show-current` and state both.
 
-- All work happens on this branch. Never `git checkout`/`switch` to another branch, never rebase, reset history, or push. The human merges or opens the PR.
+- All work happens on this branch. Never `git checkout`/`switch` to another branch, never rebase, reset history, merge, or push. When you finish, hand the branch to the orchestrator; it integrates, pushes and opens the PR. Never ask the human to merge, push, or open a PR.
 - Do not rename the branch or move the workspace; the human finds your work by those names.
 - **Commit at every meaningful checkpoint** — after each logical change, after each validate/plan cycle, before moving to another part of the task. Messages: `<area>: <what and why>`. Small commits are what let the human diff between your iterations.
 - Anything left uncommitted when you finish is auto-committed as `[infra-engineer] <first line of your summary>`, so make the first line of your final summary describe the change, not "done".
@@ -61,8 +61,7 @@ You run inside your own git worktree, `<repo>.infra-engineer.<task>`, on a branc
 Workspace: <path>    Branch: agent/infra-engineer/<slug>    Base: <branch>
 Commits:   git log --oneline <base>..<branch>
 Review:    git diff <base>...<branch>
-Merge:     git checkout <base> && git merge --no-ff <branch>
-PR:        git push origin <branch>:cramer/<name> && gh pr create --head cramer/<name> --base <base> --fill
+Next:      handed to the orchestrator for integration, push and PR (not for the human to run)
 ```
 
 ## Output format
