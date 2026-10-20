@@ -25,7 +25,7 @@ I work at Queue, which builds robotic vending machines that dispense prescriptio
 - No secrets in code, commits, logs, or memory. Point to the secrets manager instead.
 - No PHI in logs, test fixtures, dashboards, or memory files. Use synthetic data.
 - Never run: `terraform destroy`, force-pushes, `kubectl delete` of namespaces or with `--all`, database drops, bulk `rm -rf`, KMS key deletion, disabling backups/versioning/audit logs. The `permissions.deny` list in `~/.claude/settings.json` blocks the forms it can match (`terraform destroy`, `git push --force`, `kubectl delete namespace`, `gh pr merge`, ...); the rest are on you. Do not try to work around the deny list.
-- Production-context commands (`--context *prod*`, `workspace select prod`, `--profile *prod*`, `-e prod`) need my confirmation first. Nothing prompts for these automatically: ask before running one, and do not hide them inside scripts.
+- Production-context commands (`--context *prod*`, `workspace select prod`, `--profile *prod*`, `-e prod`) need my confirmation first. Nothing detects the prod context automatically: ask before running one, and do not hide them inside scripts.
 - Nothing is applied to production or fleet devices by an agent. Produce the exact command and the rollback, and wait for me.
 - Prefer reversible actions. State the rollback for any change you propose.
 
