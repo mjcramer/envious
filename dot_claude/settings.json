@@ -232,17 +232,6 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/guard-infra.py"
-          }
-        ]
-      }
-    ],
     "WorktreeCreate": [
       {
         "hooks": [
