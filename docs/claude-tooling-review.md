@@ -1,5 +1,10 @@
 # Claude tooling review: simplify, clarify, standardise on Python
 
+> **2026-10-20:** the Bash command guard (`dot_claude/hooks/executable_guard-infra.py`,
+> `tests/test_guard.py`, `tests/support.py` and the `PreToolUse` hook in `settings.json`)
+> was removed from this repo. Its last state is on the local branch `claude_command_guard`
+> (009b509). Everything below that discusses the guard describes that branch, not `main`.
+
 Date: 2026-10-02, amended 2026-10-05 (section 1 decisions), 2026-10-13
 (interpreter strategy replaced; section 1b), 2026-10-14 (decisions 14-16:
 Intel Macs, `brew`, `-S`; section 1b) and 2026-10-16 (decisions 17-18:

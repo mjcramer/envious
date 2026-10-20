@@ -7,7 +7,7 @@ tests
 tests/**
 
 # Python bytecode left behind by running or importing the scripts in dot_claude/.
-# Without this, chezmoi would deploy e.g. .claude/hooks/__pycache__/guard-infra.cpython-314.pyc.
+# Without this, chezmoi would deploy e.g. .claude/bin/__pycache__/*.pyc.
 **/__pycache__
 **/__pycache__/**
 **/*.pyc

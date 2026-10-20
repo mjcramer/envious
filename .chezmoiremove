@@ -11,3 +11,8 @@
 # same name, so a bundle file defining several helpers is only ever dead
 # weight. Its contents now live in one file per function.
 .config/fish/functions/__hostalias_helpers.fish
+
+# The Bash command guard was retired on 2026-10-20; `permissions.deny` in
+# settings.json covers what it can. The deployed copy would otherwise linger
+# unreferenced by any hook.
+.claude/hooks/guard-infra.py
