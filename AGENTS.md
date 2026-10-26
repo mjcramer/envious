@@ -52,6 +52,7 @@ Templates have access to chezmoi data variables (e.g., `.chezmoi.os`, `.email`, 
 
 ## Repository layout
 
+- `.chezmoitemplates/python-shebang` — the per-OS/arch `python3 -ISB` interpreter line; every Python entry point under `dot_claude/` starts with `#!{{ template "python-shebang" . }}` (see `docs/claude-tooling-review.md` §3.3)
 - `.chezmoidata/packages.yaml` — package lists for Homebrew (brews, casks, VS Code extensions) and apt; consumed by the install script template
 - `.chezmoiscripts/` — provisioning scripts that run automatically:
   - `run_once_enable-sudo.sh.tmpl` — grants passwordless sudo (Linux)
