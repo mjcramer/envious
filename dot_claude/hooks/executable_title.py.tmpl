@@ -23,6 +23,9 @@ envious.craft-engineer.x -> envious; outside git it is the cwd's basename.
 <agent> is `agent_type` from the payload (set when claude runs with --agent),
 else the `agent` key of ~/.claude/settings.json, else "default".
 
+The title is stripped of control characters and capped at 120 characters
+before it goes anywhere, since a directory name is untrusted input.
+
 Fails open: on any error it prints nothing and exits 0, so a broken hook can
 never block a session or feed junk into its context.
 """
@@ -34,6 +37,7 @@ if sys.version_info < (3, 12):
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -42,6 +46,11 @@ TITLE_EVENTS = {"SessionStart", "UserPromptSubmit"}
 # SessionStart sources on which a sessionTitle is applied; "clear" and "compact" drop it.
 TITLE_SOURCES = {"startup", "resume", "fork"}
 GIT_TIMEOUT = 2  # seconds; a hung git must not stall the prompt
+# A directory or agent name is untrusted text headed for an OSC sequence and the
+# persisted session name: drop C0/C1 controls and DEL (an embedded BEL would end the
+# OSC early and let what follows pass as its own sequence) and bound the length.
+CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+MAX_TITLE = 120
 
 
 def repo_name(cwd):
@@ -78,7 +87,7 @@ def main():
     cwd = payload.get("cwd")
     if not isinstance(cwd, str) or not cwd:
         cwd = os.getcwd()
-    title = f"{repo_name(cwd)} {agent_name(payload)}"
+    title = CONTROL_CHARS.sub("", f"{repo_name(cwd)} {agent_name(payload)}")[:MAX_TITLE]
     out = {"terminalSequence": f"\x1b]0;{title}\x07"}
     if (event in TITLE_EVENTS and not payload.get("session_title")
             and (event != "SessionStart" or payload.get("source") in TITLE_SOURCES)):

@@ -28,6 +28,8 @@ The contract, as properties:
   fails open malformed stdin, no git on PATH, a missing cwd, a missing or
              broken settings.json: exit 0, nothing on stderr, and either one
              well-formed object or nothing on stdout
+  sanitises  control characters in a directory or agent name never reach the
+             OSC sequence or the session title, and the title is bounded
   renders    with chezmoi on PATH, the partial gives this OS/arch's interpreter
              and the rendered file runs as deployed, by its own shebang
   wired      settings.json calls ~/.claude/hooks/title.py directly on all four
@@ -39,6 +41,7 @@ Run:  tests/title-test.py
 import json
 import os
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -292,6 +295,41 @@ def fails_open_suite():
         ok("no __pycache__ beside the source after every run")
 
 
+def sanitises_suite():
+    # A directory name carrying ESC, BEL, a newline, DEL and a C1 control: each
+    # could end or forge a terminal sequence, or land in the persisted session name.
+    crafted = os.path.join(TMP, "evil\x1b]52;c;x\x07\nline2\x7f\x9b[31mred")
+    os.makedirs(crafted)
+    bare = "evil]52;c;xline2[31mred orchestrator"
+    out = output(run(event("SessionStart", source="startup", cwd=crafted)), "crafted cwd")
+    if out is not None:
+        seq, title = out.get("terminalSequence", ""), out.get("hookSpecificOutput", {}).get("sessionTitle")
+        if seq == osc(bare) and title == bare:
+            ok("control characters in a directory name are stripped from both outputs")
+        else:
+            bad("crafted cwd gave %r" % out)
+        body = seq[len("\x1b]0;"):-1] if seq.startswith("\x1b]0;") and seq.endswith("\x07") else None
+        if body is not None and not re.search(r"[\x00-\x1f\x7f-\x9f]", body):
+            ok("terminalSequence is still one OSC 0 ... BEL with a clean body")
+        else:
+            bad("terminalSequence is not a single clean OSC 0: %r" % seq)
+
+    out = output(run(event("Stop", agent_type="a\x07\x1b[1mb")), "crafted agent_type")
+    if out is not None:
+        if out.get("terminalSequence") == osc("widget a[1mb"):
+            ok("control characters in agent_type are stripped too")
+        else:
+            bad("crafted agent_type gave %r" % out)
+
+    out = output(run(event("Stop", agent_type="x" * 500)), "long agent_type")
+    if out is not None:
+        body = out.get("terminalSequence", "")[len("\x1b]0;"):-1]
+        if len(body) == 120 and body.startswith("widget x"):
+            ok("the title is capped at 120 characters")
+        else:
+            bad("long title gave %d characters: %r" % (len(body), body[:40]))
+
+
 def expected_shebang():
     system, machine = platform.system(), platform.machine()
     if system == "Darwin":
@@ -380,6 +418,7 @@ try:
     resolves_suite()
     agent_suite()
     fails_open_suite()
+    sanitises_suite()
     renders_suite()
     wired_suite()
 finally:
