@@ -1,0 +1,13 @@
+{{- /* Interpreter for every Python entry point under ~/.claude (docs/claude-tooling-review.md §3).
+       Absolute on purpose: PATH is not consulted. -I ignores PYTHON* variables, the user
+       site-packages and the script directory; -S skips site entirely (no site-packages,
+       no .pth), so hooks are stdlib-only; -B never writes __pycache__ into ~/.claude. */ -}}
+{{- if eq .chezmoi.os "darwin" -}}
+{{- if eq .chezmoi.arch "amd64" -}}
+/usr/local/bin/python3 -ISB
+{{- else -}}
+/opt/homebrew/bin/python3 -ISB
+{{- end -}}
+{{- else -}}
+/usr/bin/python3 -ISB
+{{- end -}}

@@ -189,7 +189,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/title.sh"
+            "command": "~/.claude/hooks/title.py"
           }
         ]
       }
@@ -199,7 +199,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/title.sh"
+            "command": "~/.claude/hooks/title.py"
           }
         ]
       }
@@ -217,7 +217,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/title.sh"
+            "command": "~/.claude/hooks/title.py"
           }
         ]
       }
@@ -227,7 +227,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/title.sh"
+            "command": "~/.claude/hooks/title.py"
           }
         ]
       }
