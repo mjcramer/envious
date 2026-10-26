@@ -5,13 +5,14 @@ Registered in settings.json on SessionStart, UserPromptSubmit, Stop and
 CwdChanged. Reads the hook payload (JSON) on stdin and prints one compact JSON
 object on stdout:
 
-  every event                      {"terminalSequence": "\\x1b]0;<repo> <agent>\\x07"}
-                                   (OSC 0: the tab title tracks `cd`)
-  SessionStart (source startup,    ... plus {"hookSpecificOutput": {"hookEventName":
-  resume or fork) and              <event>, "sessionTitle": "<repo> <agent>"}}, but
-  UserPromptSubmit                 only while the session has no custom title
-                                   (payload `session_title` absent or empty), so
-                                   a /rename or --name is never overwritten
+  every event                      terminalSequence: "\\x1b]0;<repo> <agent>\\x07"
+                                   (OSC 0, so the tab title tracks `cd`)
+  SessionStart (source startup,    ... plus hookSpecificOutput with hookEventName
+  resume or fork) and              set to the event and sessionTitle to
+  UserPromptSubmit                 "<repo> <agent>", but only while the session
+                                   has no custom title (payload `session_title`
+                                   absent or empty), so a /rename or --name is
+                                   never overwritten
 
 Stop and CwdChanged do not accept sessionTitle, and SessionStart ignores it
 after /clear or a compaction; UserPromptSubmit is the backstop that names
@@ -26,6 +27,7 @@ Fails open: on any error it prints nothing and exits 0, so a broken hook can
 never block a session or feed junk into its context.
 """
 import sys
+
 if sys.version_info < (3, 12):
     sys.exit("title: needs Python >= 3.12, got " + sys.version.split()[0]
              + " (" + sys.executable + "); install it with brew/apt and run chezmoi apply")
@@ -47,7 +49,7 @@ def repo_name(cwd):
     try:
         p = subprocess.run(
             ["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            capture_output=True, text=True, timeout=GIT_TIMEOUT)
+            check=False, capture_output=True, text=True, timeout=GIT_TIMEOUT)
     except (OSError, subprocess.SubprocessError):
         p = None
     if p is not None and p.returncode == 0 and p.stdout.strip():
