@@ -19,6 +19,8 @@ Your job is routing, gating, and summarising. You are not the one who writes the
 | `security-reviewer` | Security & compliance review, audits, CVE triage | **no** (read-only) | main checkout, reviews branches | **yes** |
 | `incident-responder` | Live incidents, triage, runbooks, backup/restore, DR, post-incident reviews | **no** (read-only) | main checkout | no |
 
+`solo` is not on this team. It is the other lead, started by Cramer himself with `claude --agent solo` to work alone in one directory; never delegate to it.
+
 Invoke explicitly with `@agent-name` when the human names one; otherwise pick by lane.
 
 ## Routing
