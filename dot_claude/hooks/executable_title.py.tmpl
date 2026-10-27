@@ -1,0 +1,103 @@
+#!{{ template "python-shebang" . }}
+"""Name the Claude Code session "<repo> <agent>" and keep the terminal tab in step.
+
+Registered in settings.json on SessionStart, UserPromptSubmit, Stop and
+CwdChanged. Reads the hook payload (JSON) on stdin and prints one compact JSON
+object on stdout:
+
+  every event                      terminalSequence: "\\x1b]0;<repo> <agent>\\x07"
+                                   (OSC 0, so the tab title tracks `cd`)
+  SessionStart (source startup,    ... plus hookSpecificOutput with hookEventName
+  resume or fork) and              set to the event and sessionTitle to
+  UserPromptSubmit                 "<repo> <agent>", but only while the session
+                                   has no custom title (payload `session_title`
+                                   absent or empty), so a /rename or --name is
+                                   never overwritten
+
+Stop and CwdChanged do not accept sessionTitle, and SessionStart ignores it
+after /clear or a compaction; UserPromptSubmit is the backstop that names
+those sessions on their next prompt.
+
+<repo> is the main checkout's directory name even from a linked worktree, so
+envious.craft-engineer.x -> envious; outside git it is the cwd's basename.
+<agent> is `agent_type` from the payload (set when claude runs with --agent),
+else the `agent` key of ~/.claude/settings.json, else "default".
+
+The title is stripped of control characters and capped at 120 characters
+before it goes anywhere, since a directory name is untrusted input.
+
+Fails open: on any error it prints nothing and exits 0, so a broken hook can
+never block a session or feed junk into its context.
+"""
+import sys
+
+if sys.version_info < (3, 12):
+    sys.exit("title: needs Python >= 3.12, got " + sys.version.split()[0]
+             + " (" + sys.executable + "); install it with brew/apt and run chezmoi apply")
+
+import json
+import os
+import re
+import subprocess
+from pathlib import Path
+
+# Events whose hookSpecificOutput accepts sessionTitle (hooks reference).
+TITLE_EVENTS = {"SessionStart", "UserPromptSubmit"}
+# SessionStart sources on which a sessionTitle is applied; "clear" and "compact" drop it.
+TITLE_SOURCES = {"startup", "resume", "fork"}
+GIT_TIMEOUT = 2  # seconds; a hung git must not stall the prompt
+# A directory or agent name is untrusted text headed for an OSC sequence and the
+# persisted session name: drop C0/C1 controls and DEL (an embedded BEL would end the
+# OSC early and let what follows pass as its own sequence) and bound the length.
+CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+MAX_TITLE = 120
+
+
+def repo_name(cwd):
+    """Directory name of the main checkout containing cwd, or cwd's own name outside git."""
+    try:
+        p = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            check=False, capture_output=True, text=True, timeout=GIT_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        p = None
+    if p is not None and p.returncode == 0 and p.stdout.strip():
+        # The common dir is <main checkout>/.git for the checkout and every linked worktree.
+        return Path(p.stdout.strip()).parent.name
+    return Path(cwd).name
+
+
+def agent_name(payload):
+    agent = payload.get("agent_type")
+    if isinstance(agent, str) and agent:
+        return agent
+    # Not documented to be filled from the settings "agent" key, so read that ourselves.
+    try:
+        agent = json.loads((Path.home() / ".claude" / "settings.json").read_text()).get("agent")
+    except (OSError, ValueError, AttributeError):
+        agent = None
+    return agent if isinstance(agent, str) and agent else "default"
+
+
+def main():
+    payload = json.load(sys.stdin)
+    if not isinstance(payload, dict):
+        return
+    event = payload.get("hook_event_name")
+    cwd = payload.get("cwd")
+    if not isinstance(cwd, str) or not cwd:
+        cwd = os.getcwd()
+    title = CONTROL_CHARS.sub("", f"{repo_name(cwd)} {agent_name(payload)}")[:MAX_TITLE]
+    out = {"terminalSequence": f"\x1b]0;{title}\x07"}
+    if (event in TITLE_EVENTS and not payload.get("session_title")
+            and (event != "SessionStart" or payload.get("source") in TITLE_SOURCES)):
+        out["hookSpecificOutput"] = {"hookEventName": event, "sessionTitle": title}
+    print(json.dumps(out, separators=(",", ":")))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:  # fail open, by policy (see the docstring)
+        pass
+    sys.exit(0)

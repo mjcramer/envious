@@ -890,8 +890,11 @@ SHED_LINE1 = {  # level -> what is dropped or shortened at that level; the comme
 MAX_LEVEL_1 = max(SHED_LINE1)
 ```
 
-**`hooks/executable_title.py.tmpl`** (~20): header; `{"terminalSequence":
-"\x1b]0;<basename of cwd> · <agent_type or 'default'>\x07"}` on stdout; the
+**`hooks/executable_title.py.tmpl`** (~90): header; `{"terminalSequence":
+"\x1b]0;<repo> <agent>\x07"}` on stdout, plus `hookSpecificOutput.sessionTitle`
+on SessionStart/UserPromptSubmit while the session has no custom title (as
+built in step 11: `<repo>` is the main checkout's name via `--git-common-dir`,
+`<agent>` is `agent_type`, else settings `agent`, else `default`); the
 output contract documented in the docstring; nothing on any failure.
 
 ### 5.3 `settings.json` after the migration
@@ -1345,7 +1348,7 @@ Steps 0 and 1 are on `main` (436ae03, a049b2e and the guard follow-ups).
 | 8b | `executable_statusline.py.tmpl`; harness gains `--script` and runs both `.sh` and `.py.tmpl`; `test_entrypoints.py` picks it up by glob | 260 | property suite green for both | | Not wired into `settings.json` yet; the `.sh` still renders |
 | 9 | `executable_subagent-statusline.py.tmpl`; `subagent_suite` runs both | 180 | property suite | | same |
 | 10 | `settings.json` points at the `.py` status lines; delete the three `.sh`; delete the multi-bash loop and `bash_version` from the harness; `Edit(~/.claude/*.sh)` becomes `*.py` | 150 net negative | property suite; self-test | **SR** (permissions) | Revert then `chezmoi apply` re-deploys the `.sh` files |
-| 11 | `hooks/executable_title.py.tmpl`; `settings.json` four entries; delete `title.sh`; `jq` removed from the self-test prerequisites | 50 | manual: the title changes on `cd`; `test_entrypoints.py` | **SR** light (settings) | Revert re-deploys `title.sh` |
+| 11 | `hooks/executable_title.py.tmpl` (also names the session `<repo> <agent>` via `sessionTitle`, per `~/.claude/CLAUDE.md`); `.chezmoitemplates/python-shebang` created here, since no earlier step had landed it; `settings.json` four entries; delete `title.sh`; nothing to drop from the self-test, which never listed `jq` | 50 | `tests/title-test.py` under `make test`; `test_entrypoints.py`; manual: the title changes on `cd` | **SR** light (settings) | Revert re-deploys `title.sh` |
 | 12 | Self-test `.tmpl` rewritten per 6.3: bash smoke checks, rendered-shebang and no-pycache checks, guard probes through the `settings.json` command strings, `test_crew_e2e` against `~/.claude/bin/crew`, verified `glob` trigger | -150 | `chezmoi apply` on this box; once on an Ubuntu 24.04 target | **SR** light (the probes are the deployed acceptance test of step 2) | The old script returns and re-runs on its content change |
 | 13 | AGENTS.md "Repository layout" gains `.chezmoitemplates/`, `dot_claude/lib/`, `tests/`; the chezmoi conventions table gains the `#!{{ template "python-shebang" . }}` rule for Python entry points | 20 | | | |
 
