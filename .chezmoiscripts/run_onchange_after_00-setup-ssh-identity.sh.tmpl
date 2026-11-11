@@ -5,6 +5,16 @@
 # hash -- meaning a host whose email changes re-runs this and re-points the
 # allowed_signers principal at the new address. run_once_ would leave the old
 # principal behind with nothing to notice it.
+#
+# after_, because ssh-keygen comes from openssh-client, which the before_
+# install-packages script puts on a fresh Linux box.
+#
+# In .chezmoiscripts/ with a 00- prefix, because chezmoi runs after_ scripts in
+# order of their full target path and the git config deployed by this repo makes
+# every commit need the key generated here. Anything in the after_ stage that
+# commits has to come later. Under private_dot_ssh/ this was `.ssh/...`, which
+# sorts after everything in `.chezmoiscripts/` whatever the file is called.
+# tests/ssh-signing-test.py holds the order.
 
 set -euo pipefail
 echo "==> chezmoi: $(basename "${BASH_SOURCE[0]}")"

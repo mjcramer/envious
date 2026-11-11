@@ -13,10 +13,11 @@
 # Signing is declared here rather than set with `git config --global` at
 # provisioning time: this file is readonly_ and chezmoi-owned, so an imperative
 # write would be reverted by the next apply.
-# The key it names is created by private_dot_ssh's setup-ssh-identity script,
+# The key it names is created by .chezmoiscripts' 00-setup-ssh-identity script,
 # which runs in the after_ stage -- i.e. after this file is written. Naming a
 # not-yet-existing pubkey is inert until the first commit, and by then the same
-# apply has generated it.
+# apply has generated it. That script is named to run first in its stage, so an
+# after_ script that commits finds the key already there.
 #
 # STUCK? If the key is ever missing -- deleted key, failed script, an apply with
 # --exclude=scripts, a machine provisioned before this was added -- then every
