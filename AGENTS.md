@@ -53,17 +53,18 @@ Templates have access to chezmoi data variables (e.g., `.chezmoi.os`, `.email`, 
 ## Repository layout
 
 - `.chezmoitemplates/python-shebang` — the per-OS/arch `python3 -ISB` interpreter line; every Python entry point under `dot_claude/` starts with `#!{{ template "python-shebang" . }}` (see `docs/claude-tooling-review.md` §3.3)
-- `.chezmoidata/packages.yaml` — package lists for Homebrew (brews, casks, VS Code extensions) and apt; consumed by the install script template
+- `.chezmoidata/packages.yaml` — package lists for Homebrew (brews, casks, VS Code extensions) and apt, consumed by the install script template; also the pinned Nerd Font release for Linux (`packages.nerd_font`: version, archive, sha256)
 - `.chezmoiscripts/` — provisioning scripts that run automatically:
   - `run_once_enable-sudo.sh.tmpl` — grants passwordless sudo (Linux)
   - `run_onchange_before_install-packages.sh.tmpl` — installs/updates all packages via Homebrew or apt
   - `run_onchange_after_00-setup-ssh-identity.sh.tmpl` — generates `~/.ssh/id_ed25519` if missing and maintains `allowed_signers`; the deployed git config signs every commit with that key, so the `00-` keeps it ahead of any other `after_` script (they run in target-path order)
   - `run_onchange_after_claude-agent-team-selftest.sh.tmpl` — self-test for the Claude agent team; its git commands ignore the global and system git config
+  - `run_onchange_after_install-nerd-font.sh.tmpl` — Linux only (renders empty elsewhere): downloads the pinned Meslo Nerd Font release, verifies its sha256 and unpacks it into `~/.local/share/fonts/`; macOS gets the same font from the `font-meslo-lg-nerd-font` cask. Tested by `tests/nerd-font-test.py`
 - `private_dot_config/` — application configs deployed to `~/.config/`:
   - `fish/` — Fish shell config, functions, conf.d integrations (chezmoi, mise, direnv, brew, docker, tide prompt), and Fisher plugin list
   - `git/readonly_config.tmpl` — git config template (injects `.email`)
   - `nvim/readonly_init.lua` — Neovim config
-  - `iterm2/` — iTerm2 plist
+  - `iterm2/` — iTerm2 plist; its Default profile uses `MesloLGSNF-Regular`, the Nerd Font the cask installs
 - `dot_local/bin/` — personal scripts deployed to `~/.local/bin/` (AWS helpers, Docker helpers, Kubernetes helpers, git utilities, etc.)
 - `dot_local/private_share/templates/` — [copier](https://copier.readthedocs.io/) project templates for bootstrapping new scripts/projects
 - `dot_zshrc` — Zsh config (primarily switches to Fish for interactive shells)
