@@ -98,6 +98,8 @@ packages:
     - ffmpeg
     - findutils
     - fish
+    # fc-cache, for the Nerd Font install below.
+    - fontconfig
     - fzf
     - gh
     - git
@@ -135,8 +137,22 @@ packages:
     - util-linux
     - watch
     - wget
+    # Unpacks the Nerd Font archive below (.tar.xz).
+    - xz-utils
     - yq
     - zip
     - zookeeperd
     - zsh
     - zsh-autosuggestions
+
+  # Linux counterpart of the font-meslo-lg-nerd-font cask above: apt has no
+  # Nerd Font package, so install-nerd-font downloads this release asset from
+  # github.com/ryanoasis/nerd-fonts and unpacks every .ttf in it into
+  # ~/.local/share/fonts/<name>/ (the same files the cask installs).
+  # To upgrade, change version and sha256 together; the hash is the archive's
+  # line in that release's SHA-256.txt asset.
+  nerd_font:
+    name: MesloLGNerdFont
+    version: v3.5.1
+    archive: Meslo.tar.xz
+    sha256: 6b6624632dc6873dfb7681c3f818e7c01ab601ab707690b6440933bbe57e2b11

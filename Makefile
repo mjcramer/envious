@@ -27,6 +27,7 @@ test:
 	@tests/statusline-test.py
 	@tests/ssh-signing-test.py
 	@tests/title-test.py
+	@tests/nerd-font-test.py
 
 .PHONY: chez-delete-state
 chez-delete-state:
