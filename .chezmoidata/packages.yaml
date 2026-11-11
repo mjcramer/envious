@@ -135,7 +135,6 @@ packages:
     - util-linux
     - watch
     - wget
-    - wslu
     - yq
     - zip
     - zookeeperd
