@@ -1,0 +1,91 @@
+{{- /*
+  Linux only. On macOS the font comes from the font-meslo-lg-nerd-font cask,
+  so this renders to nothing there and chezmoi skips an empty script.
+*/ -}}
+{{- if eq .chezmoi.os "linux" -}}
+#!/usr/bin/env bash
+
+# Installs the Nerd Font the tide prompt draws its glyphs with. apt has no
+# package for it, so this fetches the release pinned in
+# .chezmoidata/packages.yaml (packages.nerd_font). chezmoi re-runs the script
+# whenever the pin changes, because the pin is part of the rendered text.
+#
+# It runs "after" so that the install-packages script has already provided
+# curl, xz and fc-cache.
+
+set -euo pipefail
+echo "==> chezmoi: $(basename "${BASH_SOURCE[0]}")"
+prefix="[install nerd font]"
+echo
+
+name={{ .packages.nerd_font.name | quote }}
+version={{ .packages.nerd_font.version | quote }}
+archive={{ .packages.nerd_font.archive | quote }}
+sha256={{ .packages.nerd_font.sha256 | quote }}
+
+url="https://github.com/ryanoasis/nerd-fonts/releases/download/$version/$archive"
+fonts_root="${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
+font_dir="$fonts_root/$name"
+
+# Written last, inside the directory that is moved into place, so it exists
+# only next to a complete install of exactly this archive.
+stamp="$font_dir/.installed"
+want_stamp="$version $archive $sha256"
+
+if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$want_stamp" ]; then
+    echo "$prefix $name $version is already installed in $font_dir."
+    exit 0
+fi
+
+for tool in curl tar xz sha256sum; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "$prefix '$tool' is required but not installed - cannot install $name" >&2
+        exit 1
+    fi
+done
+
+# Staged next to the destination so the final move is a rename on the same
+# filesystem: a failed download or a bad checksum leaves any existing install
+# untouched.
+mkdir -p "$fonts_root"
+staging=$(mktemp -d "$fonts_root/.$name.XXXXXX")
+trap 'rm -rf "$staging"' EXIT
+
+echo "$prefix Downloading $url..."
+curl -fsSL --retry 3 -o "$staging/$archive" "$url"
+
+actual=$(sha256sum "$staging/$archive" | cut -d' ' -f1)
+if [ "$actual" != "$sha256" ]; then
+    echo "$prefix Checksum mismatch for $archive - expected $sha256, got $actual; nothing installed" >&2
+    exit 1
+fi
+
+mkdir "$staging/extracted" "$staging/fonts"
+tar -xJf "$staging/$archive" -C "$staging/extracted"
+
+fonts=("$staging"/extracted/*.ttf)
+if [ ! -e "${fonts[0]}" ]; then
+    echo "$prefix $archive contains no .ttf files; nothing installed" >&2
+    exit 1
+fi
+mv "${fonts[@]}" "$staging/fonts/"
+chmod 644 "$staging"/fonts/*.ttf
+printf '%s\n' "$want_stamp" > "$staging/fonts/.installed"
+
+# Replace the directory wholesale so files dropped by a newer release do not
+# linger from the old one.
+rm -rf "$font_dir"
+mv "$staging/fonts" "$font_dir"
+echo "$prefix Installed ${#fonts[@]} font files into $font_dir."
+
+# fontconfig rescans a changed font directory by itself, so a missing fc-cache
+# costs a slower first lookup, not the install.
+if command -v fc-cache >/dev/null 2>&1; then
+    fc-cache -f "$font_dir"
+    echo "$prefix Font cache refreshed."
+else
+    echo "$prefix fc-cache not found - skipping font cache refresh."
+fi
+
+echo "$prefix ✅ $name $version installed."
+{{ end -}}
