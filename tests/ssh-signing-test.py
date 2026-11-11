@@ -2,7 +2,7 @@
 """Tests for SSH commit signing, across the two source files that set it up.
 
   private_dot_config/git/readonly_config.tmpl            declares the signing
-  private_dot_ssh/run_onchange_after_setup-ssh-identity.sh.tmpl  makes the key
+  .chezmoiscripts/run_onchange_after_00-setup-ssh-identity.sh.tmpl  makes the key
 
 Both are chezmoi templates, so the suite renders them with `chezmoi
 execute-template` and tests the rendered output -- it never applies anything
@@ -29,6 +29,8 @@ The properties worth holding onto:
   floors     ssh signing needs git >= 2.34 and apt installs git unpinned, so the
              script warns at provisioning time below that; the version is
              shimmed on PATH so both sides of the boundary are tested
+  ordered    the key script is the first after_ script chezmoi runs, so a later
+             one that commits (the agent-team selftest does) finds the key
 
 Run:  tests/ssh-signing-test.py
 """
@@ -43,7 +45,7 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_TMPL = os.path.join(REPO, "private_dot_config", "git", "readonly_config.tmpl")
 SCRIPT_TMPL = os.path.join(
-    REPO, "private_dot_ssh", "run_onchange_after_setup-ssh-identity.sh.tmpl")
+    REPO, ".chezmoiscripts", "run_onchange_after_00-setup-ssh-identity.sh.tmpl")
 
 failures = 0
 
@@ -256,6 +258,37 @@ def git_floor_suite(tmp, rendered):
         ok("an unreadable git version warns and does not abort")
 
 
+def order_suite():
+    """The key script runs before every other after_ script.
+
+    chezmoi runs after_ scripts in order of target path, the path with every
+    attribute stripped, directory included. `chezmoi managed` lists targets in
+    that same order, so the question is put to chezmoi rather than re-deriving
+    its attribute stripping here.
+    """
+    after = set()
+    for dirpath, dirnames, filenames in os.walk(REPO):
+        dirnames[:] = [d for d in dirnames if d != ".git"]
+        for name in filenames:
+            m = re.match(r"run_(?:once_|onchange_)?after_(.+?)(?:\.tmpl)?$", name)
+            if m:
+                after.add(m.group(1))
+
+    p = subprocess.run(["chezmoi", "managed", "--include=scripts", "--source", REPO],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        bad("chezmoi managed failed: %s" % p.stderr.strip())
+        return
+    ran = [t for t in p.stdout.splitlines() if os.path.basename(t) in after]
+    want = os.path.join(".chezmoiscripts", "00-setup-ssh-identity.sh")
+    if want not in ran:
+        bad("%s is not an after_ script chezmoi manages: %r" % (want, ran))
+    elif ran[0] != want:
+        bad("%s runs before the key exists (after_ order: %s)" % (ran[0], ", ".join(ran)))
+    else:
+        ok("the key script is the first of %d after_ scripts" % len(ran))
+
+
 def signing_suite(tmp, rendered, home, email):
     """The whole point: does a commit under this config come out verifiable."""
     # The rendered config names the real home; point it at the throwaway one so
@@ -308,6 +341,7 @@ try:
     if home:
         signing_suite(tmp, config_rendered, home, email)
     git_floor_suite(tmp, script_rendered)
+    order_suite()
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

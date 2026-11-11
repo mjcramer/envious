@@ -57,6 +57,8 @@ Templates have access to chezmoi data variables (e.g., `.chezmoi.os`, `.email`, 
 - `.chezmoiscripts/` — provisioning scripts that run automatically:
   - `run_once_enable-sudo.sh.tmpl` — grants passwordless sudo (Linux)
   - `run_onchange_before_install-packages.sh.tmpl` — installs/updates all packages via Homebrew or apt
+  - `run_onchange_after_00-setup-ssh-identity.sh.tmpl` — generates `~/.ssh/id_ed25519` if missing and maintains `allowed_signers`; the deployed git config signs every commit with that key, so the `00-` keeps it ahead of any other `after_` script (they run in target-path order)
+  - `run_onchange_after_claude-agent-team-selftest.sh.tmpl` — self-test for the Claude agent team; its git commands ignore the global and system git config
 - `private_dot_config/` — application configs deployed to `~/.config/`:
   - `fish/` — Fish shell config, functions, conf.d integrations (chezmoi, mise, direnv, brew, docker, tide prompt), and Fisher plugin list
   - `git/readonly_config.tmpl` — git config template (injects `.email`)
